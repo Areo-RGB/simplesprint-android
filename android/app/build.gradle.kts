@@ -1,8 +1,5 @@
 import org.gradle.testing.jacoco.tasks.JacocoReport
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-val flatBuffersSchemaDir = layout.projectDirectory.dir("src/main/fbs")
-val generatedFlatBuffersDir = layout.buildDirectory.dir("generated/source/flatbuffers/kotlin")
 val defaultTcpHostIp = "\"192.168.0.100-192.168.0.110\""
 val defaultTcpHostPort = "9000"
 
@@ -30,8 +27,8 @@ android {
         applicationId = "sync.sprint"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.0.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "TCP_ONLY", "true")
         buildConfigField("String", "TCP_HOST_IP", defaultTcpHostIp)
@@ -74,7 +71,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("com.google.flatbuffers:flatbuffers-java:25.2.10")
     implementation("androidx.compose.ui:ui:1.7.8")
     implementation("androidx.compose.material3:material3:1.3.1")
     implementation("androidx.compose.ui:ui-tooling-preview:1.7.8")
@@ -95,43 +91,6 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.7.8")
-}
-
-tasks.register("generateFlatBuffersKotlin") {
-    val schemas = fileTree(flatBuffersSchemaDir) {
-        include("**/*.fbs")
-    }
-
-    inputs.files(schemas)
-    outputs.dir(generatedFlatBuffersDir)
-
-    doLast {
-        val schemaFiles = schemas.files.sortedBy { it.absolutePath }
-        if (schemaFiles.isEmpty()) {
-            return@doLast
-        }
-
-        val outputDir = generatedFlatBuffersDir.get().asFile
-        outputDir.mkdirs()
-
-        val command = mutableListOf("flatc", "--kotlin", "-o", outputDir.absolutePath)
-        command.addAll(schemaFiles.map { it.absolutePath })
-
-        val generationResult = runCatching {
-            exec {
-                commandLine(command)
-            }
-        }
-        if (generationResult.isFailure) {
-            logger.warn(
-                "Skipping FlatBuffers generation because flatc is unavailable: ${generationResult.exceptionOrNull()?.message}",
-            )
-        }
-    }
-}
-
-tasks.withType<KotlinCompile>().configureEach {
-    dependsOn("generateFlatBuffersKotlin")
 }
 
 jacoco {
