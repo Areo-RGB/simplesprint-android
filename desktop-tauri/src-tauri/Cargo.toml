@@ -1,6 +1,6 @@
 [package]
 name = "sprint-sync-windows-desktop-tauri"
-version = "0.2.0"
+version = "0.2.1"
 description = "Sprint Sync Tauri Desktop Backend"
 authors = ["paul"]
 edition = "2021"

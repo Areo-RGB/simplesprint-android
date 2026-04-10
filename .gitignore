@@ -2,6 +2,7 @@
 .agents/
 .claude/
 .codex/
+.cursor/
 .github/
 .gitnexus/
 *.class
@@ -60,7 +61,7 @@ apps/windows/backend/node_modules
 apps/windows/backend/dist
 apps/windows/desktop/dist
 apps/windows/desktop/build
-apps/windows/ui/dist
+desktop-tauri/ui/dist
 .agents
 /.agents
 Neo4j-*-Created-*.txt

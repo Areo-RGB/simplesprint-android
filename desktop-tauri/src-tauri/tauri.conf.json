@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Sprint Sync",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "com.paul.sprintsync",
   "build": {
     "beforeDevCommand": "pnpm --filter @sprint-sync/windows-ui run dev",
     "beforeBuildCommand": "pnpm --filter @sprint-sync/windows-ui run build",
     "devUrl": "http://localhost:3000",
-    "frontendDist": "../../ui/dist"
+    "frontendDist": "../ui/dist"
   },
   "app": {
     "windows": [

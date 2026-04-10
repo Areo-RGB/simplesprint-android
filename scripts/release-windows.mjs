@@ -9,40 +9,32 @@ const rootDir = path.resolve(__dirname, '..');
 
 const tauriConfigPath = path.join(
   rootDir,
-  'apps',
-  'windows',
   'desktop-tauri',
   'src-tauri',
   'tauri.conf.json'
 );
 const cargoTomlPath = path.join(
   rootDir,
-  'apps',
-  'windows',
   'desktop-tauri',
   'src-tauri',
   'Cargo.toml'
 );
 const desktopPackageJsonPath = path.join(
   rootDir,
-  'apps',
-  'windows',
   'desktop-tauri',
   'package.json'
 );
 const bundleRoot = path.join(
   rootDir,
-  'apps',
-  'windows',
   'desktop-tauri',
   'src-tauri',
   'target',
   'release',
   'bundle'
 );
-const tauriConfigRepoPath = 'apps/windows/desktop-tauri/src-tauri/tauri.conf.json';
-const cargoTomlRepoPath = 'apps/windows/desktop-tauri/src-tauri/Cargo.toml';
-const desktopPackageJsonRepoPath = 'apps/windows/desktop-tauri/package.json';
+const tauriConfigRepoPath = 'desktop-tauri/src-tauri/tauri.conf.json';
+const cargoTomlRepoPath = 'desktop-tauri/src-tauri/Cargo.toml';
+const desktopPackageJsonRepoPath = 'desktop-tauri/package.json';
 
 function bumpPatchVersion(version) {
   const parts = version.split('.').map((part) => Number.parseInt(part, 10));

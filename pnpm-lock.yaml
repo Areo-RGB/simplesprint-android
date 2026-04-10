@@ -8,13 +8,13 @@ importers:
 
   .: {}
 
-  windows/desktop-tauri:
+  desktop-tauri:
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2.0.0
         version: 2.10.1
 
-  windows/ui:
+  desktop-tauri/ui:
     dependencies:
       '@tailwindcss/vite':
         specifier: ^4.1.14
