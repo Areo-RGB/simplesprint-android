@@ -1,0 +1,3 @@
+packages:
+  - "windows/ui"
+  - "windows/desktop-tauri"

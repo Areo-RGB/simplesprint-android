@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "moduleResolution": "Bundler",
+    "target": "ES2022"
+  },
+  "include": [
+    "windows/backend/src/**/*.ts",
+    "windows/ui/src/**/*.{js,jsx,ts,tsx}"
+  ],
+  "exclude": [
+    "node_modules",
+    "android",
+    "windows/**/dist",
+    "windows/**/build"
+  ]
+}
