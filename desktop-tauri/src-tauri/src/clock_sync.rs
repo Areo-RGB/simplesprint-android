@@ -1,18 +1,13 @@
 use crate::events::push_event;
 use crate::session;
-use crate::state::{
-  AppState, ClockResyncLoopState, EventLevel, SharedAppState, FRAME_KIND_BINARY,
-};
+use crate::state::{AppState, ClockResyncLoopState, EventLevel, SharedAppState};
 use once_cell::sync::OnceCell;
 use serde_json::json;
+use sprint_sync_protocol::clock_sync as protocol_clock_sync;
+use sprint_sync_protocol::frame::{wrap_frame, FRAME_KIND_CLOCK_SYNC};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-pub const CLOCK_SYNC_VERSION: u8 = 1;
-pub const CLOCK_SYNC_TYPE_REQUEST: u8 = 1;
-pub const CLOCK_SYNC_TYPE_RESPONSE: u8 = 2;
-pub const CLOCK_SYNC_REQUEST_BYTES: usize = 10;
-pub const CLOCK_SYNC_RESPONSE_BYTES: usize = 26;
 pub const CLOCK_RESYNC_MIN_SAMPLE_COUNT: i32 = 3;
 pub const CLOCK_RESYNC_MAX_SAMPLE_COUNT: i32 = 24;
 pub const CLOCK_RESYNC_DEFAULT_SAMPLE_COUNT: i32 = 8;
@@ -29,14 +24,6 @@ fn event_details(values: &[(&str, serde_json::Value)]) -> BTreeMap<String, serde
   details
 }
 
-fn wrap_binary_frame(payload: &[u8]) -> Vec<u8> {
-  let mut frame = Vec::with_capacity(5 + payload.len());
-  frame.push(FRAME_KIND_BINARY);
-  frame.extend_from_slice(&(payload.len() as i32).to_be_bytes());
-  frame.extend_from_slice(payload);
-  frame
-}
-
 pub fn now_host_elapsed_nanos() -> i64 {
   let start = CLOCK_MONOTONIC_START.get_or_init(Instant::now);
   let elapsed_nanos_u128 = start.elapsed().as_nanos();
@@ -48,30 +35,22 @@ pub fn now_host_elapsed_nanos() -> i64 {
 }
 
 pub fn handle_clock_sync_request(state: &mut AppState, endpoint_id: &str, payload: &[u8]) -> Option<Vec<u8>> {
-  if payload.len() != CLOCK_SYNC_REQUEST_BYTES {
+  let Some(request) = protocol_clock_sync::decode_request(payload) else {
     state.clock_domain_state.ignored_frames += 1;
     state.message_stats.parse_errors += 1;
     return None;
-  }
+  };
 
-  let version = payload[0];
-  let payload_type = payload[1];
-  if version != CLOCK_SYNC_VERSION || payload_type != CLOCK_SYNC_TYPE_REQUEST {
-    state.clock_domain_state.ignored_frames += 1;
-    state.message_stats.parse_errors += 1;
-    return None;
-  }
-
-  let client_send_elapsed_nanos = i64::from_be_bytes(payload[2..10].try_into().ok()?);
+  let client_send_elapsed_nanos = request.client_send_elapsed_nanos;
   let host_receive_elapsed_nanos = now_host_elapsed_nanos();
   let host_send_elapsed_nanos = now_host_elapsed_nanos();
 
-  let mut response = [0u8; CLOCK_SYNC_RESPONSE_BYTES];
-  response[0] = CLOCK_SYNC_VERSION;
-  response[1] = CLOCK_SYNC_TYPE_RESPONSE;
-  response[2..10].copy_from_slice(&client_send_elapsed_nanos.to_be_bytes());
-  response[10..18].copy_from_slice(&host_receive_elapsed_nanos.to_be_bytes());
-  response[18..26].copy_from_slice(&host_send_elapsed_nanos.to_be_bytes());
+  let response = protocol_clock_sync::ClockSyncResponse {
+    client_send_elapsed_nanos,
+    host_receive_elapsed_nanos,
+    host_send_elapsed_nanos,
+  };
+  let response_bytes = protocol_clock_sync::encode_response(&response);
 
   let timestamp_iso = chrono::Utc::now().to_rfc3339();
   state.clock_domain_state.samples_responded += 1;
@@ -81,7 +60,7 @@ pub fn handle_clock_sync_request(state: &mut AppState, endpoint_id: &str, payloa
   state.clock_domain_state.last_host_receive_elapsed_nanos = Some(host_receive_elapsed_nanos.to_string());
   state.clock_domain_state.last_host_send_elapsed_nanos = Some(host_send_elapsed_nanos.to_string());
 
-  Some(wrap_binary_frame(&response))
+  Some(wrap_frame(FRAME_KIND_CLOCK_SYNC, &response_bytes))
 }
 
 pub fn normalize_clock_resync_sample_count(sample_count: i32) -> Option<i32> {

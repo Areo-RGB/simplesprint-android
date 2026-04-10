@@ -626,5 +626,5 @@ internal fun shouldSchedulePreviewRebindRetry(
     hasPreviewView: Boolean,
     hasCameraProvider: Boolean,
 ): Boolean {
-    return monitoring && hasCameraProvider
+    return monitoring && hasPreviewView && hasCameraProvider
 }

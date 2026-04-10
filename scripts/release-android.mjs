@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const buildGradlePath = path.join(rootDir, 'apps', 'android', 'app', 'build.gradle.kts');
+const buildGradlePath = path.join(rootDir, 'android', 'app', 'build.gradle.kts');
 
 function run() {
   console.log('Reading build.gradle.kts...');
@@ -67,7 +67,7 @@ function run() {
     execSync('npm run build:release:apk', { stdio: 'inherit', cwd: rootDir });
 
     // Check if the APK exists
-    const apkPath = path.join(rootDir, 'apps', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
+    const apkPath = path.join(rootDir, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
     if (!fs.existsSync(apkPath)) {
       console.error(`\nError: APK not found at expected path: ${apkPath}`);
       process.exit(1);

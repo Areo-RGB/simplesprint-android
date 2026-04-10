@@ -5,9 +5,12 @@ use crate::session;
 use crate::state::{
   CameraFacing, DeviceIdentityMessage, DeviceTelemetryMessage, EventLevel, LapResultMessage,
   SessionTriggerMessage, SharedAppState, SocketContext, TriggerRefinementMessage, TriggerRequestMessage,
-  WireRole, FRAME_KIND_BINARY, FRAME_KIND_MESSAGE, FRAME_KIND_TELEMETRY_BINARY, MAX_FRAME_BYTES,
+  WireRole,
 };
 use serde_json::Value;
+use sprint_sync_protocol::frame::{
+  parse_frame_header, FRAME_KIND_CLOCK_SYNC, FRAME_KIND_MESSAGE, FRAME_KIND_TELEMETRY, MAX_FRAME_BYTES,
+};
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -274,8 +277,8 @@ async fn handle_telemetry_frame(payload: &[u8], endpoint_id: &str, shared_state:
 async fn process_frame(kind: u8, payload: Vec<u8>, endpoint_id: &str, shared_state: &SharedAppState) {
   match kind {
     FRAME_KIND_MESSAGE => parse_json_message(&payload, endpoint_id, shared_state).await,
-    FRAME_KIND_BINARY => handle_binary_frame(&payload, endpoint_id, shared_state).await,
-    FRAME_KIND_TELEMETRY_BINARY => handle_telemetry_frame(&payload, endpoint_id, shared_state).await,
+    FRAME_KIND_CLOCK_SYNC => handle_binary_frame(&payload, endpoint_id, shared_state).await,
+    FRAME_KIND_TELEMETRY => handle_telemetry_frame(&payload, endpoint_id, shared_state).await,
     _ => {
       let mut state = shared_state.write().await;
       state.message_stats.parse_errors += 1;
@@ -291,13 +294,11 @@ async fn process_frame(kind: u8, payload: Vec<u8>, endpoint_id: &str, shared_sta
 
 async fn process_socket_buffer(endpoint_id: &str, shared_state: &SharedAppState, buffer: &mut Vec<u8>) -> Result<(), String> {
   loop {
-    if buffer.len() < 5 {
+    let Some((frame_kind, frame_length)) = parse_frame_header(buffer) else {
       break;
-    }
+    };
 
-    let frame_kind = buffer[0];
-    let frame_length = i32::from_be_bytes([buffer[1], buffer[2], buffer[3], buffer[4]]) as isize;
-    if frame_length <= 0 || frame_length as usize > MAX_FRAME_BYTES {
+    if frame_length == 0 || frame_length > MAX_FRAME_BYTES {
       {
         let mut state = shared_state.write().await;
         state.message_stats.parse_errors += 1;
@@ -311,7 +312,7 @@ async fn process_socket_buffer(endpoint_id: &str, shared_state: &SharedAppState,
       return Err(format!("invalid frame length {frame_length}"));
     }
 
-    let frame_total_size = 5 + frame_length as usize;
+    let frame_total_size = 5 + frame_length;
     if buffer.len() < frame_total_size {
       break;
     }

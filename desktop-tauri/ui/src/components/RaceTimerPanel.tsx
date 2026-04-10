@@ -46,13 +46,12 @@ export default function RaceTimerPanel({
   const stateIsMonitoring = timerStateLabel === "Monitoring";
 
   return (
-    <section
-      className={`border-[2px] border-black bg-white p-3 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
-        mergeWithHeader ? "border-t-0" : ""
-      } ${withFloatingTabs ? "pt-20" : ""}`}
-    >
-      <div className="space-y-4">
-        <div className="overflow-hidden border-[2px] border-black bg-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+    <section className={withFloatingTabs ? "pt-20" : ""}>
+      <div
+        className={`overflow-hidden border-[2px] border-black bg-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
+          mergeWithHeader ? "border-t-0" : ""
+        }`}
+      >
           <div className="flex flex-wrap items-center justify-between gap-2 border-b-[2px] border-black px-3 py-2.5">
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-black sm:text-sm">Race Timer</p>
             <nav className="inline-flex items-center gap-1 rounded-sm border-[2px] border-black bg-[#f4f4f0] p-0.5 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
@@ -166,7 +165,6 @@ export default function RaceTimerPanel({
               </div>
             </div>
           </div>
-        </div>
       </div>
     </section>
   );

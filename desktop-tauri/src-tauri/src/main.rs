@@ -4,7 +4,6 @@ mod clock_sync;
 mod commands;
 mod events;
 mod flatbuf_codec;
-mod generated;
 mod results;
 mod session;
 mod state;

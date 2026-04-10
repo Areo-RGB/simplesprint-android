@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use sprint_sync_protocol::telemetry as protocol_telemetry;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,9 +9,6 @@ use tokio::sync::{mpsc, RwLock};
 pub const EVENT_LIMIT: usize = 300;
 pub const HISTORY_LIMIT: usize = 1_000;
 pub const MAX_FRAME_BYTES: usize = 1_048_576;
-pub const FRAME_KIND_MESSAGE: u8 = 1;
-pub const FRAME_KIND_BINARY: u8 = 2;
-pub const FRAME_KIND_TELEMETRY_BINARY: u8 = 3;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Type, PartialEq, Eq, Hash)]
 pub enum SessionStage {
@@ -120,6 +118,22 @@ impl From<u8> for WireRole {
   }
 }
 
+impl From<protocol_telemetry::WireRole> for WireRole {
+  fn from(value: protocol_telemetry::WireRole) -> Self {
+    match value {
+      protocol_telemetry::WireRole::Unassigned => WireRole::Unassigned,
+      protocol_telemetry::WireRole::Start => WireRole::Start,
+      protocol_telemetry::WireRole::Split => WireRole::Split,
+      protocol_telemetry::WireRole::Split1 => WireRole::Split1,
+      protocol_telemetry::WireRole::Split2 => WireRole::Split2,
+      protocol_telemetry::WireRole::Split3 => WireRole::Split3,
+      protocol_telemetry::WireRole::Split4 => WireRole::Split4,
+      protocol_telemetry::WireRole::Stop => WireRole::Stop,
+      protocol_telemetry::WireRole::Display => WireRole::Display,
+    }
+  }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Type, PartialEq, Eq, Hash)]
 pub enum TriggerType {
   #[serde(rename = "start")]
@@ -136,6 +150,15 @@ pub enum CameraFacing {
   Rear,
   #[serde(rename = "front")]
   Front,
+}
+
+impl From<protocol_telemetry::CameraFacing> for CameraFacing {
+  fn from(value: protocol_telemetry::CameraFacing) -> Self {
+    match value {
+      protocol_telemetry::CameraFacing::Rear => CameraFacing::Rear,
+      protocol_telemetry::CameraFacing::Front => CameraFacing::Front,
+    }
+  }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Type, PartialEq, Eq, Hash)]
@@ -638,6 +661,138 @@ pub struct TriggerRefinementMessage {
   pub role: WireRole,
   pub provisional_host_sensor_nanos: i64,
   pub refined_host_sensor_nanos: i64,
+}
+
+impl From<protocol_telemetry::ProtocolSplitMark> for ProtocolSplitMark {
+  fn from(value: protocol_telemetry::ProtocolSplitMark) -> Self {
+    Self {
+      role: value.role.into(),
+      host_sensor_nanos: value.host_sensor_nanos,
+    }
+  }
+}
+
+impl From<protocol_telemetry::ProtocolTimelineSnapshot> for ProtocolTimelineSnapshot {
+  fn from(value: protocol_telemetry::ProtocolTimelineSnapshot) -> Self {
+    Self {
+      host_start_sensor_nanos: value.host_start_sensor_nanos,
+      host_stop_sensor_nanos: value.host_stop_sensor_nanos,
+      host_split_marks: value.host_split_marks.into_iter().map(Into::into).collect(),
+      host_split_sensor_nanos: value.host_split_sensor_nanos,
+    }
+  }
+}
+
+impl From<protocol_telemetry::ProtocolSnapshotDevice> for ProtocolSnapshotDevice {
+  fn from(value: protocol_telemetry::ProtocolSnapshotDevice) -> Self {
+    Self {
+      id: value.id,
+      name: value.name,
+      role: value.role.into(),
+      camera_facing: value.camera_facing.into(),
+      is_local: value.is_local,
+    }
+  }
+}
+
+impl From<protocol_telemetry::ProtocolSnapshot> for ProtocolSnapshot {
+  fn from(value: protocol_telemetry::ProtocolSnapshot) -> Self {
+    Self {
+      r#type: value.r#type,
+      stage: value.stage,
+      monitoring_active: value.monitoring_active,
+      devices: value.devices.into_iter().map(Into::into).collect(),
+      timeline: value.timeline.into(),
+      run_id: value.run_id,
+      host_sensor_minus_elapsed_nanos: value.host_sensor_minus_elapsed_nanos,
+      host_gps_utc_offset_nanos: value.host_gps_utc_offset_nanos,
+      host_gps_fix_age_nanos: value.host_gps_fix_age_nanos,
+      self_device_id: value.self_device_id,
+      anchor_device_id: value.anchor_device_id,
+      anchor_state: value.anchor_state,
+    }
+  }
+}
+
+impl From<protocol_telemetry::TimelineSnapshotPayload> for TimelineSnapshotPayload {
+  fn from(value: protocol_telemetry::TimelineSnapshotPayload) -> Self {
+    Self {
+      r#type: value.r#type,
+      host_start_sensor_nanos: value.host_start_sensor_nanos,
+      host_stop_sensor_nanos: value.host_stop_sensor_nanos,
+      host_split_marks: value.host_split_marks.into_iter().map(Into::into).collect(),
+      host_split_sensor_nanos: value.host_split_sensor_nanos,
+      sent_elapsed_nanos: value.sent_elapsed_nanos,
+    }
+  }
+}
+
+impl From<protocol_telemetry::TriggerRequestMessage> for TriggerRequestMessage {
+  fn from(value: protocol_telemetry::TriggerRequestMessage) -> Self {
+    Self {
+      role: value.role.into(),
+      trigger_sensor_nanos: value.trigger_sensor_nanos,
+      mapped_host_sensor_nanos: value.mapped_host_sensor_nanos,
+      source_device_id: value.source_device_id,
+      source_elapsed_nanos: value.source_elapsed_nanos,
+      mapped_anchor_elapsed_nanos: value.mapped_anchor_elapsed_nanos,
+    }
+  }
+}
+
+impl From<protocol_telemetry::SessionTriggerMessage> for SessionTriggerMessage {
+  fn from(value: protocol_telemetry::SessionTriggerMessage) -> Self {
+    Self {
+      trigger_type: value.trigger_type,
+      split_index: value.split_index,
+      trigger_sensor_nanos: value.trigger_sensor_nanos,
+    }
+  }
+}
+
+impl From<protocol_telemetry::TriggerRefinementMessage> for TriggerRefinementMessage {
+  fn from(value: protocol_telemetry::TriggerRefinementMessage) -> Self {
+    Self {
+      run_id: value.run_id,
+      role: value.role.into(),
+      provisional_host_sensor_nanos: value.provisional_host_sensor_nanos,
+      refined_host_sensor_nanos: value.refined_host_sensor_nanos,
+    }
+  }
+}
+
+impl From<protocol_telemetry::DeviceIdentityMessage> for DeviceIdentityMessage {
+  fn from(value: protocol_telemetry::DeviceIdentityMessage) -> Self {
+    Self {
+      stable_device_id: value.stable_device_id,
+      device_name: value.device_name,
+    }
+  }
+}
+
+impl From<protocol_telemetry::DeviceTelemetryMessage> for DeviceTelemetryMessage {
+  fn from(value: protocol_telemetry::DeviceTelemetryMessage) -> Self {
+    Self {
+      stable_device_id: value.stable_device_id,
+      role: value.role.into(),
+      sensitivity: value.sensitivity,
+      latency_ms: value.latency_ms,
+      clock_synced: value.clock_synced,
+      analysis_width: value.analysis_width,
+      analysis_height: value.analysis_height,
+      timestamp_millis: value.timestamp_millis,
+    }
+  }
+}
+
+impl From<protocol_telemetry::LapResultMessage> for LapResultMessage {
+  fn from(value: protocol_telemetry::LapResultMessage) -> Self {
+    Self {
+      sender_device_name: value.sender_device_name,
+      started_sensor_nanos: value.started_sensor_nanos,
+      stopped_sensor_nanos: value.stopped_sensor_nanos,
+    }
+  }
 }
 
 #[derive(Clone, Debug)]

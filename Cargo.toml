@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "crates/sprint-sync-protocol",
+  "crates/sprint-sync-protocol-jni",
+  "desktop-tauri/src-tauri",
+]
+resolver = "2"
