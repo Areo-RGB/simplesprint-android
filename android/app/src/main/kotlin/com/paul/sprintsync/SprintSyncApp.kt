@@ -95,6 +95,7 @@ data class SprintSyncUiState(
     val isHost: Boolean = false,
     val localRole: SessionDeviceRole = SessionDeviceRole.UNASSIGNED,
     val userMonitoringEnabled: Boolean = true,
+    val debugEnabled: Boolean = false,
     val monitoringConnectionTypeLabel: String = "-",
     val monitoringSyncModeLabel: String = "-",
     val monitoringLatencyMs: Int? = null,
@@ -190,6 +191,7 @@ fun SprintSyncApp(
     onStartDisplayHost: () -> Unit,
     onReconnectClient: () -> Unit,
     onReconnectPc: () -> Unit,
+    onToggleDebug: () -> Unit,
     showTabletRoleChoice: Boolean = false,
     onStartMonitoring: () -> Unit,
     onStartDisplayDiscovery: () -> Unit,
@@ -225,7 +227,7 @@ fun SprintSyncApp(
     onConfirmRunDetailsSave: () -> Unit,
 ) {
     var showPreview by rememberSaveable { mutableStateOf(true) }
-    var showDebugInfo by rememberSaveable { mutableStateOf(false) }
+    val showDebugInfo = uiState.debugEnabled
     val forceControllerOnlyHostUi = BuildConfig.DEVICE_PROFILE == "host_xiaomi"
     val effectiveControllerOnlyHost = uiState.isControllerOnlyHost || forceControllerOnlyHostUi
     val effectiveShowPreview = showPreview && !forceControllerOnlyHostUi
@@ -295,8 +297,8 @@ fun SprintSyncApp(
                                     }
                                 }
                             }
-                            TextButton(onClick = { showDebugInfo = !showDebugInfo }) {
-                                Text(if (showDebugInfo) "Debug On" else "Debug Off")
+                            TextButton(onClick = onToggleDebug) {
+                                Text(if (uiState.debugEnabled) "Debug On" else "Debug Off")
                             }
                         }
                     }

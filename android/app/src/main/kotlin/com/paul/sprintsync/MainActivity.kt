@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         private const val MAX_PENDING_LAPS = 100
         private const val LOCAL_CAPTURE_RETRY_BACKOFF_MS = 1_500L
         private const val LOCAL_CAPTURE_FRAME_WATCHDOG_MS = 2_500L
+        private const val FRAME_STATS_SYNC_THROTTLE_MS = 500L
         private const val LOW_LATENCY_WIFI_MIN_API = 29
         private const val MONITORING_WIFI_LOCK_TAG = "SprintSyncMonitoringWifiLock"
     }
@@ -85,7 +86,9 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     private var isAppResumed: Boolean = false
     private var localCaptureStartPending: Boolean = false
     private var localCaptureRetryBlockedUntilMs: Long = 0L
+    private var debugEnabled: Boolean = false
     private var userMonitoringEnabled: Boolean = true
+    private var lastSyncControllerSummariesMs: Long = 0L
     private var displayDiscoveryActive: Boolean = false
     private var displayConnectedHostEndpointId: String? = null
     private var displayConnectedHostName: String? = null
@@ -336,6 +339,11 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                             setBusy = true,
                             preferredEndpointId = BuildConfig.TCP_HOST_IP,
                         )
+                    },
+                    onToggleDebug = {
+                        debugEnabled = !debugEnabled
+                        syncControllerSummaries()
+                        lastSyncControllerSummariesMs = SystemClock.elapsedRealtime()
                     },
                     showTabletRoleChoice = isTabletRoleChoiceDevice,
                     onStartMonitoring = {
@@ -1089,7 +1097,9 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 is SensorNativeEvent.Diagnostic -> "native_diagnostic"
                 is SensorNativeEvent.Error -> "native_error"
             }
-            updateUiState { copy(lastSensorEvent = type) }
+            if (debugEnabled || event !is SensorNativeEvent.FrameStats) {
+                updateUiState { copy(lastSensorEvent = type) }
+            }
             return
         }
         if (event is SensorNativeEvent.Error) {
@@ -1176,12 +1186,22 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
             is SensorNativeEvent.Diagnostic -> "native_diagnostic"
             is SensorNativeEvent.Error -> "native_error"
         }
-        val controllerEvent = raceSessionController.uiState.value.lastEvent ?: "-"
-        val motionMonitoring = motionDetectionController.uiState.value.monitoring
-        logRuntimeDiagnostic("sensor:$type controllerEvent=$controllerEvent motionMonitoring=$motionMonitoring")
-        updateUiState { copy(lastSensorEvent = type) }
-        syncControllerSummaries()
-        appendEvent("sensor:$type")
+        val isFrameStats = event is SensorNativeEvent.FrameStats
+        val shouldEmitSensorDiagnostics = debugEnabled || !isFrameStats
+        if (shouldEmitSensorDiagnostics) {
+            val controllerEvent = raceSessionController.uiState.value.lastEvent ?: "-"
+            val motionMonitoring = motionDetectionController.uiState.value.monitoring
+            logRuntimeDiagnostic("sensor:$type controllerEvent=$controllerEvent motionMonitoring=$motionMonitoring")
+            updateUiState { copy(lastSensorEvent = type) }
+            appendEvent("sensor:$type")
+        }
+
+        val nowMs = SystemClock.elapsedRealtime()
+        val throttleElapsed = (nowMs - lastSyncControllerSummariesMs) >= FRAME_STATS_SYNC_THROTTLE_MS
+        if (debugEnabled || !isFrameStats || throttleElapsed) {
+            syncControllerSummaries()
+            lastSyncControllerSummariesMs = nowMs
+        }
     }
 
     private fun firstConnectedEndpointId(): String? {
@@ -1264,6 +1284,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         }
 
         val motionState = motionDetectionController.uiState.value
+        val debugActive = debugEnabled
         val localSensitivity = thresholdToSensitivity(motionState.config.threshold).roundToInt().coerceIn(1, 100)
         raceSessionController.onLocalSensitivityChanged(localSensitivity)
         raceSessionController.consumePendingSensitivityUpdateFromHost()?.let { pendingSensitivity ->
@@ -1486,6 +1507,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 networkRole = raceState.networkRole,
                 sessionSummary = raceState.stage.name.lowercase(),
                 monitoringSummary = monitoringSummary,
+                debugEnabled = debugActive,
                 userMonitoringEnabled = userMonitoringEnabled,
                 isControllerOnlyHost = isControllerOnlyHost,
                 connectedDeviceMonitoringCards = connectedDeviceMonitoringCards,
@@ -1515,16 +1537,16 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 roiWidth = motionState.config.roiWidth,
                 cooldownMs = motionState.config.cooldownMs,
                 processEveryNFrames = motionState.config.processEveryNFrames,
-                observedFps = motionState.observedFps,
-                cameraFpsModeLabel = cameraModeLabel,
-                targetFpsUpper = motionState.targetFpsUpper,
-                rawScore = motionState.rawScore,
-                baseline = motionState.baseline,
-                effectiveScore = motionState.effectiveScore,
-                frameSensorNanos = motionState.lastFrameSensorNanos,
-                streamFrameCount = motionState.streamFrameCount,
-                processedFrameCount = motionState.processedFrameCount,
-                triggerHistory = triggerHistory,
+                observedFps = if (debugActive) motionState.observedFps else this.observedFps,
+                cameraFpsModeLabel = if (debugActive) cameraModeLabel else this.cameraFpsModeLabel,
+                targetFpsUpper = if (debugActive) motionState.targetFpsUpper else this.targetFpsUpper,
+                rawScore = if (debugActive) motionState.rawScore else this.rawScore,
+                baseline = if (debugActive) motionState.baseline else this.baseline,
+                effectiveScore = if (debugActive) motionState.effectiveScore else this.effectiveScore,
+                frameSensorNanos = if (debugActive) motionState.lastFrameSensorNanos else this.frameSensorNanos,
+                streamFrameCount = if (debugActive) motionState.streamFrameCount else this.streamFrameCount,
+                processedFrameCount = if (debugActive) motionState.processedFrameCount else this.processedFrameCount,
+                triggerHistory = if (debugActive) triggerHistory else this.triggerHistory,
                 splitHistory = splitHistory,
                 runDetailsCheckpointRoles = runDetailsCheckpointRoles,
                 runDetailsDistancesByRole = runDetailsDistances,

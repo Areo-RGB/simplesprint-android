@@ -154,16 +154,22 @@ class SprintSyncAppLayoutLogicTest {
 
     @Test
     fun `single-device mode hides run detail metrics and fps requires debug`() {
+        val debugOnState = SprintSyncUiState(debugEnabled = true)
+        val debugOffState = SprintSyncUiState(debugEnabled = false)
+
         assertFalse(shouldShowRunDetailMetrics(SessionOperatingMode.SINGLE_DEVICE))
         assertTrue(shouldShowRunDetailMetrics(SessionOperatingMode.NETWORK_RACE))
-        assertTrue(shouldShowCameraFpsInfo(showDebugInfo = true))
-        assertFalse(shouldShowCameraFpsInfo(showDebugInfo = false))
+        assertTrue(shouldShowCameraFpsInfo(showDebugInfo = debugOnState.debugEnabled))
+        assertFalse(shouldShowCameraFpsInfo(showDebugInfo = debugOffState.debugEnabled))
     }
 
     @Test
     fun `monitoring connection panel only shows when debug is on`() {
-        assertTrue(shouldShowMonitoringConnectionDebugInfo(showDebugInfo = true))
-        assertFalse(shouldShowMonitoringConnectionDebugInfo(showDebugInfo = false))
+        val debugOnState = SprintSyncUiState(debugEnabled = true)
+        val debugOffState = SprintSyncUiState(debugEnabled = false)
+
+        assertTrue(shouldShowMonitoringConnectionDebugInfo(showDebugInfo = debugOnState.debugEnabled))
+        assertFalse(shouldShowMonitoringConnectionDebugInfo(showDebugInfo = debugOffState.debugEnabled))
     }
 
     @Test
