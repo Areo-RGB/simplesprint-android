@@ -612,4 +612,103 @@ class MainActivityMonitoringLogicTest {
 
         assertEquals(listOf("2", "1", "3"), sorted.map { it.id })
     }
+
+    @Test
+    fun `auto reset schedules when host monitoring run is finished and enabled`() {
+        assertTrue(
+            shouldScheduleAutoReset(
+                isHost = true,
+                stage = SessionStage.MONITORING,
+                autoResetEnabled = true,
+                startedSensorNanos = 100L,
+                stoppedSensorNanos = 200L,
+                pendingRunSignature = null,
+                completedRunSignature = null,
+            ),
+        )
+    }
+
+    @Test
+    fun `auto reset does not schedule when disabled not host or not monitoring`() {
+        assertFalse(
+            shouldScheduleAutoReset(
+                isHost = true,
+                stage = SessionStage.MONITORING,
+                autoResetEnabled = false,
+                startedSensorNanos = 100L,
+                stoppedSensorNanos = 200L,
+                pendingRunSignature = null,
+                completedRunSignature = null,
+            ),
+        )
+        assertFalse(
+            shouldScheduleAutoReset(
+                isHost = false,
+                stage = SessionStage.MONITORING,
+                autoResetEnabled = true,
+                startedSensorNanos = 100L,
+                stoppedSensorNanos = 200L,
+                pendingRunSignature = null,
+                completedRunSignature = null,
+            ),
+        )
+        assertFalse(
+            shouldScheduleAutoReset(
+                isHost = true,
+                stage = SessionStage.LOBBY,
+                autoResetEnabled = true,
+                startedSensorNanos = 100L,
+                stoppedSensorNanos = 200L,
+                pendingRunSignature = null,
+                completedRunSignature = null,
+            ),
+        )
+    }
+
+    @Test
+    fun `auto reset settings changes request pending cancellation`() {
+        assertTrue(
+            shouldCancelPendingAutoResetForSettingsChange(
+                previousEnabled = true,
+                previousDelaySeconds = 3,
+                nextEnabled = false,
+                nextDelaySeconds = 3,
+            ),
+        )
+        assertTrue(
+            shouldCancelPendingAutoResetForSettingsChange(
+                previousEnabled = true,
+                previousDelaySeconds = 3,
+                nextEnabled = true,
+                nextDelaySeconds = 5,
+            ),
+        )
+    }
+
+    @Test
+    fun `manual reset snapshot change avoids duplicate auto reset`() {
+        val finishedSignature = autoResetRunSignature(
+            startedSensorNanos = 1_000L,
+            stoppedSensorNanos = 2_000L,
+        )
+        assertEquals("1000:2000", finishedSignature)
+        assertEquals(null, autoResetRunSignature(startedSensorNanos = null, stoppedSensorNanos = 2_000L))
+    }
+
+    @Test
+    fun `auto reset schedules exactly once per finished snapshot`() {
+        val signature = autoResetRunSignature(startedSensorNanos = 10L, stoppedSensorNanos = 20L)
+        assertEquals("10:20", signature)
+        assertFalse(
+            shouldScheduleAutoReset(
+                isHost = true,
+                stage = SessionStage.MONITORING,
+                autoResetEnabled = true,
+                startedSensorNanos = 10L,
+                stoppedSensorNanos = 20L,
+                pendingRunSignature = null,
+                completedRunSignature = signature,
+            ),
+        )
+    }
 }

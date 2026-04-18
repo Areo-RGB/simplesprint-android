@@ -47,4 +47,21 @@ class LocalRepositorySavedRunResultsTest {
 
         repository.saveSavedRunResults(emptyList())
     }
+
+    @Test
+    fun `auto reset preferences persist and delay is clamped`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val repository = LocalRepository(context)
+
+        repository.saveAutoResetEnabled(true)
+        repository.saveAutoResetDelaySeconds(4)
+        assertEquals(true, repository.loadAutoResetEnabled())
+        assertEquals(4, repository.loadAutoResetDelaySeconds())
+
+        repository.saveAutoResetDelaySeconds(0)
+        assertEquals(1, repository.loadAutoResetDelaySeconds())
+
+        repository.saveAutoResetDelaySeconds(99)
+        assertEquals(5, repository.loadAutoResetDelaySeconds())
+    }
 }

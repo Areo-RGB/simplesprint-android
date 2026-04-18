@@ -96,6 +96,13 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     private var localCaptureRetryBlockedUntilMs: Long = 0L
     private var debugEnabled: Boolean = false
     private var userMonitoringEnabled: Boolean = true
+    @Volatile
+    private var autoResetEnabled: Boolean = false
+    @Volatile
+    private var autoResetDelaySeconds: Int = 3
+    private var pendingAutoResetJob: Job? = null
+    private var pendingAutoResetRunSignature: String? = null
+    private var completedAutoResetRunSignature: String? = null
     private var lastSyncControllerSummariesMs: Long = 0L
     private var displayDiscoveryActive: Boolean = false
     private var displayConnectedHostEndpointId: String? = null
@@ -199,6 +206,17 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         lifecycleScope.launch {
             val persistedResults = localRepository.loadSavedRunResults()
             updateUiState { copy(savedRunResults = sortSavedRunResults(persistedResults)) }
+        }
+        lifecycleScope.launch {
+            autoResetEnabled = localRepository.loadAutoResetEnabled()
+            autoResetDelaySeconds = localRepository.loadAutoResetDelaySeconds()
+            updateUiState {
+                copy(
+                    autoResetEnabled = this@MainActivity.autoResetEnabled,
+                    autoResetDelaySeconds = this@MainActivity.autoResetDelaySeconds,
+                )
+            }
+            syncControllerSummaries()
         }
 
         setContent {
@@ -410,6 +428,44 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                         }
                         syncControllerSummaries()
                     },
+                    onSetAutoResetEnabled = { enabled ->
+                        val previousEnabled = autoResetEnabled
+                        val previousDelay = autoResetDelaySeconds
+                        autoResetEnabled = enabled
+                        if (
+                            shouldCancelPendingAutoResetForSettingsChange(
+                                previousEnabled = previousEnabled,
+                                previousDelaySeconds = previousDelay,
+                                nextEnabled = autoResetEnabled,
+                                nextDelaySeconds = autoResetDelaySeconds,
+                            )
+                        ) {
+                            cancelPendingAutoReset("settings changed")
+                        }
+                        lifecycleScope.launch {
+                            localRepository.saveAutoResetEnabled(enabled)
+                        }
+                        syncControllerSummaries()
+                    },
+                    onSetAutoResetDelaySeconds = { nextDelay ->
+                        val previousEnabled = autoResetEnabled
+                        val previousDelay = autoResetDelaySeconds
+                        autoResetDelaySeconds = nextDelay.coerceIn(1, 5)
+                        if (
+                            shouldCancelPendingAutoResetForSettingsChange(
+                                previousEnabled = previousEnabled,
+                                previousDelaySeconds = previousDelay,
+                                nextEnabled = autoResetEnabled,
+                                nextDelaySeconds = autoResetDelaySeconds,
+                            )
+                        ) {
+                            cancelPendingAutoReset("settings changed")
+                        }
+                        lifecycleScope.launch {
+                            localRepository.saveAutoResetDelaySeconds(autoResetDelaySeconds)
+                        }
+                        syncControllerSummaries()
+                    },
                     onStopMonitoring = {
                         logRuntimeDiagnostic("stopMonitoring requested")
                         stopNsdDiscovery()
@@ -443,17 +499,8 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                         syncControllerSummaries()
                     },
                     onResetRun = {
-                        raceSessionController.resetRun()
-                        updateUiState {
-                            copy(
-                                showRunDetailsOverlay = false,
-                                showRunDetailsSaveDialog = false,
-                                runDetailsResults = emptyList(),
-                                runDetailsValidationError = null,
-                                runDetailsSaveError = null,
-                            )
-                        }
-                        syncControllerSummaries()
+                        cancelPendingAutoReset("manual reset")
+                        resetRunAndSync()
                     },
                     onAssignRole = { deviceId, role ->
                         raceSessionController.assignRole(deviceId, role)
@@ -832,6 +879,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
 
     override fun onPause() {
         isAppResumed = false
+        cancelPendingAutoReset("activity paused")
         stopTimerRefreshLoop()
         stopNsdDiscovery()
         stopNsdHosting()
@@ -858,6 +906,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
 
     override fun onDestroy() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        cancelPendingAutoReset("activity destroyed")
         stopTimerRefreshLoop()
         stopNsdDiscovery()
         stopNsdHosting()
@@ -1411,6 +1460,11 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
             "Idle"
         }
         val isHost = raceState.networkRole == SessionNetworkRole.HOST || mode == SessionOperatingMode.DISPLAY_HOST
+        syncAutoResetScheduler(
+            raceState = raceState,
+            isHost = isHost,
+            operatingMode = mode,
+        )
         val isClient = raceState.networkRole == SessionNetworkRole.CLIENT
         val liveConnectedEndpoints = when (mode) {
             SessionOperatingMode.NETWORK_RACE -> raceState.connectedEndpoints
@@ -1618,7 +1672,9 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 sessionSummary = raceState.stage.name.lowercase(),
                 monitoringSummary = monitoringSummary,
                 debugEnabled = debugActive,
-                userMonitoringEnabled = userMonitoringEnabled,
+                userMonitoringEnabled = this@MainActivity.userMonitoringEnabled,
+                autoResetEnabled = this@MainActivity.autoResetEnabled,
+                autoResetDelaySeconds = this@MainActivity.autoResetDelaySeconds,
                 isControllerOnlyHost = isControllerOnlyHost,
                 connectedDeviceMonitoringCards = connectedDeviceMonitoringCards,
                 clockSummary = clockSummary,
@@ -1676,6 +1732,104 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 saveableRunDurationNanos = saveableRunDurationNanos,
             )
         }
+    }
+
+    private fun resetRunAndSync() {
+        raceSessionController.resetRun()
+        updateUiState {
+            copy(
+                showRunDetailsOverlay = false,
+                showRunDetailsSaveDialog = false,
+                runDetailsResults = emptyList(),
+                runDetailsValidationError = null,
+                runDetailsSaveError = null,
+            )
+        }
+        syncControllerSummaries()
+    }
+
+    private fun syncAutoResetScheduler(
+        raceState: RaceSessionUiState,
+        isHost: Boolean,
+        operatingMode: SessionOperatingMode,
+    ) {
+        if (
+            pendingAutoResetRunSignature != null &&
+            shouldCancelPendingAutoResetForState(
+                autoResetEnabled = autoResetEnabled,
+                isHost = isHost,
+                stage = raceState.stage,
+                operatingMode = operatingMode,
+            )
+        ) {
+            cancelPendingAutoReset("state no longer eligible")
+        }
+
+        val runSignature = autoResetRunSignature(
+            startedSensorNanos = raceState.timeline.hostStartSensorNanos,
+            stoppedSensorNanos = raceState.timeline.hostStopSensorNanos,
+        )
+        if (
+            shouldScheduleAutoReset(
+                isHost = isHost,
+                stage = raceState.stage,
+                autoResetEnabled = autoResetEnabled,
+                startedSensorNanos = raceState.timeline.hostStartSensorNanos,
+                stoppedSensorNanos = raceState.timeline.hostStopSensorNanos,
+                pendingRunSignature = pendingAutoResetRunSignature,
+                completedRunSignature = completedAutoResetRunSignature,
+            ) && runSignature != null
+        ) {
+            scheduleAutoReset(runSignature)
+            return
+        }
+
+        if (raceState.timeline.hostStartSensorNanos != null && raceState.timeline.hostStopSensorNanos == null) {
+            completedAutoResetRunSignature = null
+        }
+    }
+
+    private fun scheduleAutoReset(runSignature: String) {
+        cancelPendingAutoReset("reschedule")
+        pendingAutoResetRunSignature = runSignature
+        val delayMs = autoResetDelaySeconds.coerceIn(1, 5) * 1_000L
+        pendingAutoResetJob = lifecycleScope.launch {
+            delay(delayMs)
+            if (!isActive) {
+                return@launch
+            }
+            val raceState = raceSessionController.uiState.value
+            val isHost = raceState.networkRole == SessionNetworkRole.HOST
+            val currentRunSignature = autoResetRunSignature(
+                startedSensorNanos = raceState.timeline.hostStartSensorNanos,
+                stoppedSensorNanos = raceState.timeline.hostStopSensorNanos,
+            )
+            if (
+                shouldCancelPendingAutoResetForState(
+                    autoResetEnabled = autoResetEnabled,
+                    isHost = isHost,
+                    stage = raceState.stage,
+                    operatingMode = raceState.operatingMode,
+                ) || currentRunSignature != runSignature
+            ) {
+                pendingAutoResetRunSignature = null
+                pendingAutoResetJob = null
+                return@launch
+            }
+            pendingAutoResetRunSignature = null
+            pendingAutoResetJob = null
+            completedAutoResetRunSignature = runSignature
+            resetRunAndSync()
+        }
+    }
+
+    private fun cancelPendingAutoReset(reason: String) {
+        pendingAutoResetJob?.cancel()
+        pendingAutoResetJob = null
+        if (pendingAutoResetRunSignature != null) {
+            logRuntimeDiagnostic("auto reset canceled: $reason")
+        }
+        pendingAutoResetRunSignature = null
     }
 
     private fun syncMonitoringWifiLock(raceState: RaceSessionUiState) {
@@ -1857,6 +2011,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         return formatElapsedTimerDisplay(totalMillis)
     }
 
+    @Synchronized
     private fun updateUiState(update: SprintSyncUiState.() -> SprintSyncUiState) {
         uiState.value = uiState.value.update()
     }
@@ -2312,6 +2467,55 @@ internal fun formatElapsedTimerDisplay(totalMillis: Long): String {
     } else {
         String.format("%02d.%02d", seconds, centiseconds)
     }
+}
+
+internal fun autoResetRunSignature(
+    startedSensorNanos: Long?,
+    stoppedSensorNanos: Long?,
+): String? {
+    if (startedSensorNanos == null || stoppedSensorNanos == null) {
+        return null
+    }
+    return "$startedSensorNanos:$stoppedSensorNanos"
+}
+
+internal fun shouldScheduleAutoReset(
+    isHost: Boolean,
+    stage: SessionStage,
+    autoResetEnabled: Boolean,
+    startedSensorNanos: Long?,
+    stoppedSensorNanos: Long?,
+    pendingRunSignature: String?,
+    completedRunSignature: String?,
+): Boolean {
+    val runSignature = autoResetRunSignature(startedSensorNanos, stoppedSensorNanos)
+    return autoResetEnabled &&
+        isHost &&
+        stage == SessionStage.MONITORING &&
+        runSignature != null &&
+        runSignature != pendingRunSignature &&
+        runSignature != completedRunSignature
+}
+
+internal fun shouldCancelPendingAutoResetForState(
+    autoResetEnabled: Boolean,
+    isHost: Boolean,
+    stage: SessionStage,
+    operatingMode: SessionOperatingMode,
+): Boolean {
+    return !autoResetEnabled ||
+        !isHost ||
+        stage != SessionStage.MONITORING ||
+        operatingMode != SessionOperatingMode.NETWORK_RACE
+}
+
+internal fun shouldCancelPendingAutoResetForSettingsChange(
+    previousEnabled: Boolean,
+    previousDelaySeconds: Int,
+    nextEnabled: Boolean,
+    nextDelaySeconds: Int,
+): Boolean {
+    return previousEnabled != nextEnabled || previousDelaySeconds != nextDelaySeconds
 }
 
 internal fun requestedOrientationForMode(

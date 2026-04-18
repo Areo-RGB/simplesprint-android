@@ -51,7 +51,7 @@ function Get-ReadyDeviceIds {
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $apkPath = Join-Path $repoRoot "app\build\outputs\apk\release\app-release.apk"
-$packageId = "com.paul.simplesprint"
+$packageId = "com.paul.simplesprint.release"
 
 if (-not (Test-Path -LiteralPath $apkPath)) {
     throw "Release APK not found at: $apkPath`nBuild first with: .\gradlew.bat :app:assembleRelease"

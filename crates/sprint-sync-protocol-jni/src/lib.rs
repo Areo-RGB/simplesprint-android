@@ -497,7 +497,7 @@ fn decoded_telemetry_to_json(decoded: telemetry::DecodedTelemetryMessage) -> Val
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_encodeClockSyncRequestNative(
+pub extern "system" fn Java_com_paul_simplesprint_protocol_NativeProtocol_encodeClockSyncRequestNative(
   mut env: JNIEnv,
   _class: JClass,
   client_send_elapsed_nanos: jlong,
@@ -510,7 +510,7 @@ pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_encodeCl
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_decodeClockSyncRequestNative(
+pub extern "system" fn Java_com_paul_simplesprint_protocol_NativeProtocol_decodeClockSyncRequestNative(
   mut env: JNIEnv,
   _class: JClass,
   payload: JByteArray,
@@ -525,7 +525,7 @@ pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_decodeCl
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_encodeClockSyncResponseNative(
+pub extern "system" fn Java_com_paul_simplesprint_protocol_NativeProtocol_encodeClockSyncResponseNative(
   mut env: JNIEnv,
   _class: JClass,
   client_send: jlong,
@@ -542,7 +542,7 @@ pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_encodeCl
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_decodeClockSyncResponseNative(
+pub extern "system" fn Java_com_paul_simplesprint_protocol_NativeProtocol_decodeClockSyncResponseNative(
   mut env: JNIEnv,
   _class: JClass,
   payload: JByteArray,
@@ -565,7 +565,7 @@ pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_decodeCl
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_encodeTelemetryEnvelopeNative(
+pub extern "system" fn Java_com_paul_simplesprint_protocol_NativeProtocol_encodeTelemetryEnvelopeNative(
   mut env: JNIEnv,
   _class: JClass,
   type_tag: jint,
@@ -583,7 +583,7 @@ pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_encodeTe
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_paul_sprintsync_protocol_NativeProtocol_decodeTelemetryEnvelopeNative(
+pub extern "system" fn Java_com_paul_simplesprint_protocol_NativeProtocol_decodeTelemetryEnvelopeNative(
   mut env: JNIEnv,
   _class: JClass,
   payload: JByteArray,

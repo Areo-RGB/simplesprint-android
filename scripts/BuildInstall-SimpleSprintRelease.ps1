@@ -1,7 +1,3 @@
-param(
-    [switch]$TabletAlwaysHost = $true
-)
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -27,17 +23,12 @@ Invoke-Step -Name "Build JNI libraries" -Action {
     cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 24 -o app/src/main/jniLibs build --release -p sprint-sync-protocol-jni | Out-Host
 }
 
-$gradleArgs = @(":app:assembleDebug")
-if ($TabletAlwaysHost) {
-    $gradleArgs += "-PtabletAlwaysHost=true"
-}
-
-Invoke-Step -Name "Assemble debug APK" -Action {
-    .\gradlew.bat @gradleArgs | Out-Host
+Invoke-Step -Name "Assemble release APK" -Action {
+    .\gradlew.bat :app:assembleRelease | Out-Host
 }
 
 Invoke-Step -Name "Install and launch on connected devices" -Action {
-    powershell -ExecutionPolicy Bypass -File .\scripts\Install-SimpleSprintDebug.ps1 | Out-Host
+    powershell -ExecutionPolicy Bypass -File .\scripts\Install-SimpleSprintRelease.ps1 | Out-Host
 }
 
-Write-Host "`nDone. Debug build installed and launched."
+Write-Host "`nDone. Release build installed and launched."

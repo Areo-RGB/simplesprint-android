@@ -95,6 +95,8 @@ data class SprintSyncUiState(
     val isHost: Boolean = false,
     val localRole: SessionDeviceRole = SessionDeviceRole.UNASSIGNED,
     val userMonitoringEnabled: Boolean = true,
+    val autoResetEnabled: Boolean = false,
+    val autoResetDelaySeconds: Int = 3,
     val debugEnabled: Boolean = false,
     val monitoringConnectionTypeLabel: String = "-",
     val monitoringSyncModeLabel: String = "-",
@@ -196,6 +198,8 @@ fun SprintSyncApp(
     onStartDisplayDiscovery: () -> Unit,
     onConnectDisplayHost: (String) -> Unit,
     onSetMonitoringEnabled: (Boolean) -> Unit,
+    onSetAutoResetEnabled: (Boolean) -> Unit,
+    onSetAutoResetDelaySeconds: (Int) -> Unit,
     onStopMonitoring: () -> Unit,
     onResetRun: () -> Unit,
     onAssignRole: (String, SessionDeviceRole) -> Unit,
@@ -372,6 +376,23 @@ fun SprintSyncApp(
                             onStartMonitoring = onStartMonitoring,
                             onResetRun = onResetRun,
                         )
+                    }
+                    if (
+                        shouldShowLobbyAutoResetSettingsCard(
+                            tabletAlwaysHost = tabletAlwaysHost,
+                            stage = uiState.stage,
+                            operatingMode = uiState.operatingMode,
+                            isHost = uiState.isHost,
+                        )
+                    ) {
+                        item {
+                            LobbySettingsCard(
+                                autoResetEnabled = uiState.autoResetEnabled,
+                                autoResetDelaySeconds = uiState.autoResetDelaySeconds,
+                                onSetAutoResetEnabled = onSetAutoResetEnabled,
+                                onSetAutoResetDelaySeconds = onSetAutoResetDelaySeconds,
+                            )
+                        }
                     }
                     item {
                         LobbyPeersCard(
@@ -1470,6 +1491,59 @@ private fun PreviewSurface(
 }
 
 @Composable
+private fun LobbySettingsCard(
+    autoResetEnabled: Boolean,
+    autoResetDelaySeconds: Int,
+    onSetAutoResetEnabled: (Boolean) -> Unit,
+    onSetAutoResetDelaySeconds: (Int) -> Unit,
+) {
+    var delayMenuExpanded by remember { mutableStateOf(false) }
+    val selectedDelaySeconds = autoResetDelaySeconds.coerceIn(1, 5)
+    SprintSyncCard {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionHeader("Settings")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Auto Reset", style = MaterialTheme.typography.bodyLarge)
+                Switch(
+                    checked = autoResetEnabled,
+                    onCheckedChange = onSetAutoResetEnabled,
+                )
+            }
+            if (shouldShowAutoResetDelaySelector(autoResetEnabled)) {
+                Text(
+                    text = "Delay",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                )
+                OutlinedButton(
+                    onClick = { delayMenuExpanded = true },
+                ) {
+                    Text("${selectedDelaySeconds}s")
+                }
+                DropdownMenu(
+                    expanded = delayMenuExpanded,
+                    onDismissRequest = { delayMenuExpanded = false },
+                ) {
+                    autoResetDelayOptionsSeconds().forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text("${option}s") },
+                            onClick = {
+                                onSetAutoResetDelaySeconds(option)
+                                delayMenuExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun AdvancedDetectionCard(
     uiState: SprintSyncUiState,
     showDebugInfo: Boolean,
@@ -2280,6 +2354,22 @@ private fun deviceSortOrderKey(name: String): Int =
 
 internal fun shouldShowMonitoringRoleAndToggles(mode: SessionOperatingMode): Boolean =
     mode != SessionOperatingMode.SINGLE_DEVICE
+
+internal fun autoResetDelayOptionsSeconds(): IntRange = 1..5
+
+internal fun shouldShowAutoResetDelaySelector(autoResetEnabled: Boolean): Boolean = autoResetEnabled
+
+internal fun shouldShowLobbyAutoResetSettingsCard(
+    tabletAlwaysHost: Boolean,
+    stage: SessionStage,
+    operatingMode: SessionOperatingMode,
+    isHost: Boolean,
+): Boolean {
+    return tabletAlwaysHost &&
+        stage == SessionStage.LOBBY &&
+        operatingMode == SessionOperatingMode.NETWORK_RACE &&
+        isHost
+}
 
 internal fun shouldShowSingleDeviceCameraFacingToggle(mode: SessionOperatingMode): Boolean =
     mode == SessionOperatingMode.SINGLE_DEVICE

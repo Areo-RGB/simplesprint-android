@@ -294,6 +294,61 @@ class SprintSyncAppLayoutLogicTest {
     }
 
     @Test
+    fun `lobby settings card only shows for tablet host lobby path`() {
+        assertTrue(
+            shouldShowLobbyAutoResetSettingsCard(
+                tabletAlwaysHost = true,
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                isHost = true,
+            ),
+        )
+        assertFalse(
+            shouldShowLobbyAutoResetSettingsCard(
+                tabletAlwaysHost = false,
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                isHost = true,
+            ),
+        )
+        assertFalse(
+            shouldShowLobbyAutoResetSettingsCard(
+                tabletAlwaysHost = true,
+                stage = SessionStage.MONITORING,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                isHost = true,
+            ),
+        )
+        assertFalse(
+            shouldShowLobbyAutoResetSettingsCard(
+                tabletAlwaysHost = true,
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.SINGLE_DEVICE,
+                isHost = true,
+            ),
+        )
+        assertFalse(
+            shouldShowLobbyAutoResetSettingsCard(
+                tabletAlwaysHost = true,
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                isHost = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `auto reset delay selector shows only when auto reset is enabled`() {
+        assertTrue(shouldShowAutoResetDelaySelector(autoResetEnabled = true))
+        assertFalse(shouldShowAutoResetDelaySelector(autoResetEnabled = false))
+    }
+
+    @Test
+    fun `auto reset delay options are constrained from one to five seconds`() {
+        assertEquals(listOf(1, 2, 3, 4, 5), autoResetDelayOptionsSeconds().toList())
+    }
+
+    @Test
     fun `connected device cards show only for host xiaomi monitoring mode`() {
         assertTrue(
             shouldShowHostConnectedDeviceCards(

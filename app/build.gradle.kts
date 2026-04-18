@@ -48,7 +48,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            resValue("string", "app_name", "SimpleSprint.debug")
+        }
         release {
+            applicationIdSuffix = ".release"
+            resValue("string", "app_name", "SimpleSprint.release")
             signingConfig = signingConfigs.getByName("debug")
         }
     }
