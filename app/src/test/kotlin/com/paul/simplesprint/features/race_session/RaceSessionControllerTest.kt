@@ -999,6 +999,108 @@ class RaceSessionControllerTest {
     }
 
     @Test
+    fun `binary telemetry mode sends remote sensitivity update as telemetry envelope`() {
+        val sentMessages = mutableListOf<Pair<String, String>>()
+        val sentTelemetryPayloads = mutableListOf<Pair<String, ByteArray>>()
+        val controller = RaceSessionController(
+            loadLastRun = { null },
+            saveLastRun = { },
+            sendMessage = { endpointId, payload, onComplete ->
+                sentMessages += endpointId to payload
+                onComplete(Result.success(Unit))
+            },
+            sendClockSyncPayload = { _, _, onComplete -> onComplete(Result.success(Unit)) },
+            sendTelemetryPayload = { endpointId, payloadBytes, onComplete ->
+                sentTelemetryPayloads += endpointId to payloadBytes
+                onComplete(Result.success(Unit))
+            },
+            enableBinaryTelemetry = true,
+            ioDispatcher = Dispatchers.Unconfined,
+            nowElapsedNanos = { 1L },
+        )
+
+        controller.setNetworkRole(SessionNetworkRole.HOST)
+        controller.onConnectionEvent(
+            SessionConnectionEvent.ConnectionResult(
+                endpointId = "ep-1",
+                endpointName = "Huawei",
+                connected = true,
+                statusCode = 0,
+                statusMessage = null,
+            ),
+        )
+        controller.onConnectionEvent(
+            SessionConnectionEvent.PayloadReceived(
+                endpointId = "ep-1",
+                message = SessionDeviceIdentityMessage(
+                    stableDeviceId = "stable-huawei",
+                    deviceName = "Huawei P30",
+                ).toJsonString(),
+            ),
+        )
+
+        val messageCountBefore = sentMessages.size
+        assertTrue(controller.sendRemoteSensitivityUpdate("stable-huawei", 44))
+
+        val decodedConfig = sentTelemetryPayloads
+            .asReversed()
+            .mapNotNull { (_, payloadBytes) -> TelemetryEnvelopeFlatBufferCodec.decode(payloadBytes) }
+            .mapNotNull { it as? DecodedTelemetryEnvelope.ConfigUpdate }
+            .firstOrNull()
+        assertNotNull(decodedConfig)
+        assertEquals("stable-huawei", decodedConfig?.message?.targetStableDeviceId)
+        assertEquals(44, decodedConfig?.message?.sensitivity)
+        assertEquals("ep-1", sentTelemetryPayloads.last().first)
+        assertEquals(messageCountBefore, sentMessages.size)
+    }
+
+    @Test
+    fun `binary telemetry mode sends clock resync request as telemetry envelope`() {
+        val sentMessages = mutableListOf<Pair<String, String>>()
+        val sentTelemetryPayloads = mutableListOf<Pair<String, ByteArray>>()
+        val controller = RaceSessionController(
+            loadLastRun = { null },
+            saveLastRun = { },
+            sendMessage = { endpointId, payload, onComplete ->
+                sentMessages += endpointId to payload
+                onComplete(Result.success(Unit))
+            },
+            sendClockSyncPayload = { _, _, onComplete -> onComplete(Result.success(Unit)) },
+            sendTelemetryPayload = { endpointId, payloadBytes, onComplete ->
+                sentTelemetryPayloads += endpointId to payloadBytes
+                onComplete(Result.success(Unit))
+            },
+            enableBinaryTelemetry = true,
+            ioDispatcher = Dispatchers.Unconfined,
+            nowElapsedNanos = { 1L },
+        )
+
+        controller.setNetworkRole(SessionNetworkRole.HOST)
+        controller.onConnectionEvent(
+            SessionConnectionEvent.ConnectionResult(
+                endpointId = "ep-1",
+                endpointName = "peer",
+                connected = true,
+                statusCode = 0,
+                statusMessage = null,
+            ),
+        )
+
+        val messageCountBefore = sentMessages.size
+        assertTrue(controller.requestRemoteClockResync("ep-1", sampleCount = 9))
+
+        val decodedResync = sentTelemetryPayloads
+            .asReversed()
+            .mapNotNull { (_, payloadBytes) -> TelemetryEnvelopeFlatBufferCodec.decode(payloadBytes) }
+            .mapNotNull { it as? DecodedTelemetryEnvelope.ClockResync }
+            .firstOrNull()
+        assertNotNull(decodedResync)
+        assertEquals(9, decodedResync?.message?.sampleCount)
+        assertEquals("ep-1", sentTelemetryPayloads.last().first)
+        assertEquals(messageCountBefore, sentMessages.size)
+    }
+
+    @Test
     fun `host auto assigns connected huawei endpoint to split2 role`() {
         val controller = RaceSessionController(
             loadLastRun = { null },

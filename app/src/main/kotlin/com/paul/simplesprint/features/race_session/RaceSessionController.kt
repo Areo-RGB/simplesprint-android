@@ -277,15 +277,25 @@ class RaceSessionController(
             return false
         }
         val endpointId = endpointIdByStableDeviceId[targetStableDeviceId] ?: return false
-        val payload = SessionDeviceConfigUpdateMessage(
+        val message = SessionDeviceConfigUpdateMessage(
             targetStableDeviceId = targetStableDeviceId,
             sensitivity = sensitivity.coerceIn(1, 100),
-        ).toJsonString()
-        sendMessage(endpointId, payload) { result ->
-            result.exceptionOrNull()?.let { error ->
-                _uiState.value = _uiState.value.copy(
-                    lastError = "remote sensitivity send failed: ${error.localizedMessage ?: "unknown"}",
-                )
+        )
+        if (enableBinaryTelemetry) {
+            sendTelemetryPayload(endpointId, TelemetryEnvelopeFlatBufferCodec.encodeDeviceConfigUpdate(message)) { result ->
+                result.exceptionOrNull()?.let { error ->
+                    _uiState.value = _uiState.value.copy(
+                        lastError = "remote sensitivity send failed: ${error.localizedMessage ?: "unknown"}",
+                    )
+                }
+            }
+        } else {
+            sendMessage(endpointId, message.toJsonString()) { result ->
+                result.exceptionOrNull()?.let { error ->
+                    _uiState.value = _uiState.value.copy(
+                        lastError = "remote sensitivity send failed: ${error.localizedMessage ?: "unknown"}",
+                    )
+                }
             }
         }
         _uiState.value.remoteDeviceTelemetry[targetStableDeviceId]?.let { existing ->
@@ -308,14 +318,24 @@ class RaceSessionController(
             _uiState.value = _uiState.value.copy(lastError = "resync failed: endpoint not connected")
             return false
         }
-        val payload = SessionClockResyncRequestMessage(
+        val message = SessionClockResyncRequestMessage(
             sampleCount = sampleCount.coerceIn(3, 24),
-        ).toJsonString()
-        sendMessage(targetEndpointId, payload) { result ->
-            result.exceptionOrNull()?.let { error ->
-                _uiState.value = _uiState.value.copy(
-                    lastError = "resync request failed: ${error.localizedMessage ?: "unknown"}",
-                )
+        )
+        if (enableBinaryTelemetry) {
+            sendTelemetryPayload(targetEndpointId, TelemetryEnvelopeFlatBufferCodec.encodeClockResyncRequest(message)) { result ->
+                result.exceptionOrNull()?.let { error ->
+                    _uiState.value = _uiState.value.copy(
+                        lastError = "resync request failed: ${error.localizedMessage ?: "unknown"}",
+                    )
+                }
+            }
+        } else {
+            sendMessage(targetEndpointId, message.toJsonString()) { result ->
+                result.exceptionOrNull()?.let { error ->
+                    _uiState.value = _uiState.value.copy(
+                        lastError = "resync request failed: ${error.localizedMessage ?: "unknown"}",
+                    )
+                }
             }
         }
         _uiState.value = _uiState.value.copy(lastEvent = "clock_resync_requested")

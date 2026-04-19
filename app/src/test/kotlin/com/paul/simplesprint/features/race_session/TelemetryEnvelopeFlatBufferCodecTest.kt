@@ -1,5 +1,10 @@
 package com.paul.simplesprint.features.race_session
 
+import SprintSync.Schema.DeviceTelemetry as FbDeviceTelemetry
+import SprintSync.Schema.SessionDeviceRole as FbSessionDeviceRole
+import SprintSync.Schema.TelemetryEnvelope
+import SprintSync.Schema.TelemetryPayload
+import com.google.flatbuffers.FlatBufferBuilder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -202,5 +207,64 @@ class TelemetryEnvelopeFlatBufferCodecTest {
         val payload = decoded as? DecodedTelemetryEnvelope.ClockResync
         assertNotNull(payload)
         assertEquals(message, payload!!.message)
+    }
+
+    @Test
+    fun `snapshot envelope decodes absent host offset as null`() {
+        val message = SessionSnapshotMessage(
+            stage = SessionStage.LOBBY,
+            monitoringActive = false,
+            devices = listOf(
+                SessionDevice(
+                    id = "host-ep",
+                    name = "Host Phone",
+                    role = SessionDeviceRole.START,
+                    cameraFacing = SessionCameraFacing.REAR,
+                    isLocal = false,
+                ),
+            ),
+            hostStartSensorNanos = null,
+            hostStopSensorNanos = null,
+            hostSplitMarks = emptyList(),
+            runId = null,
+            hostSensorMinusElapsedNanos = null,
+            hostGpsUtcOffsetNanos = null,
+            hostGpsFixAgeNanos = null,
+            selfDeviceId = null,
+            anchorDeviceId = null,
+            anchorState = null,
+        )
+
+        val encoded = TelemetryEnvelopeFlatBufferCodec.encodeSnapshot(message)
+        val decoded = TelemetryEnvelopeFlatBufferCodec.decode(encoded) as? DecodedTelemetryEnvelope.Snapshot
+
+        assertNotNull(decoded)
+        assertNull(decoded!!.message.hostSensorMinusElapsedNanos)
+    }
+
+    @Test
+    fun `decode rejects device telemetry with non positive timestamp`() {
+        val builder = FlatBufferBuilder(128)
+        val stableDeviceIdOffset = builder.createString("stable-1")
+        val payloadOffset = FbDeviceTelemetry.createDeviceTelemetry(
+            builder,
+            stableDeviceIdOffset,
+            FbSessionDeviceRole.START,
+            50,
+            -1,
+            true,
+            -1,
+            -1,
+            0L,
+        )
+        val envelopeOffset = TelemetryEnvelope.createTelemetryEnvelope(
+            builder,
+            TelemetryPayload.DeviceTelemetry,
+            payloadOffset,
+        )
+        TelemetryEnvelope.finishTelemetryEnvelopeBuffer(builder, envelopeOffset)
+
+        val decoded = TelemetryEnvelopeFlatBufferCodec.decode(builder.sizedByteArray())
+        assertNull(decoded)
     }
 }

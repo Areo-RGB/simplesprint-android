@@ -362,7 +362,7 @@ object TelemetryEnvelopeFlatBufferCodec {
                                 payload::hostSplitMarks,
                             ),
                             runId = payload.runId()?.ifBlank { null },
-                            hostSensorMinusElapsedNanos = payload.hostSensorMinusElapsedNanos(),
+                            hostSensorMinusElapsedNanos = payload.hostSensorMinusElapsedNanos().toOptionalLong(),
                             hostGpsUtcOffsetNanos = payload.hostGpsUtcOffsetNanos().toOptionalLong(),
                             hostGpsFixAgeNanos = payload.hostGpsFixAgeNanos().toOptionalLong(),
                             selfDeviceId = payload.selfDeviceId()?.ifBlank { null },
@@ -450,6 +450,9 @@ object TelemetryEnvelopeFlatBufferCodec {
                         return null
                     }
                     if (latencyMs != null && latencyMs < 0) {
+                        return null
+                    }
+                    if (payload.timestampMillis() <= 0L) {
                         return null
                     }
 
