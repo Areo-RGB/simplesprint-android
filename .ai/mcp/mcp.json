@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mcphub": {
+      "url": "http://localhost:3000/mcp/1a7c31c3-77b9-42ed-bcd4-6327dfb51abe",
+      "headers": {
+        "Authorization": "Bearer <your-access-token>"
+      }
+    }
+  }
+}
