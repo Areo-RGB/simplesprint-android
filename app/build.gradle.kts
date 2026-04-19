@@ -1,6 +1,6 @@
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
-val defaultTcpHostIp = "\"192.168.0.109\""
+val defaultTcpHostIp = "\"192.168.0.103\""
 val defaultTcpHostPort = "9000"
 val tabletAlwaysHostApk = (project.findProperty("tabletAlwaysHost") as String?)?.toBooleanStrictOrNull() ?: false
 

@@ -30,7 +30,7 @@ class MainActivityMonitoringLogicTest {
             sessionNetworkRole = SessionNetworkRole.CLIENT,
         )
 
-        assertEquals("Connection failed. Turn off mobile data / use Wi-Fi only.", message)
+        assertEquals("Connection failed. Confirm same Wi-Fi and host server at 192.168.0.103:9000.", message)
     }
 
     @Test
@@ -292,6 +292,24 @@ class MainActivityMonitoringLogicTest {
             shouldForceTabletHostMode(
                 tabletAlwaysHostFlag = false,
                 isTabletRoleChoiceDevice = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `tablet role choice device detection excludes redmi topaz phone and includes xiaomi tablet`() {
+        assertFalse(
+            isTabletRoleChoiceDeviceModel(
+                model = "23021RAA2Y",
+                device = "topaz",
+                manufacturer = "Xiaomi",
+            ),
+        )
+        assertTrue(
+            isTabletRoleChoiceDeviceModel(
+                model = "2410CRP4CG",
+                device = "uke",
+                manufacturer = "Xiaomi",
             ),
         )
     }

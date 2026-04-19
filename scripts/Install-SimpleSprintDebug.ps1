@@ -1,3 +1,7 @@
+param(
+    [string]$DeviceId
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -61,6 +65,13 @@ $adb = Resolve-AdbPath
 $deviceIds = Get-ReadyDeviceIds -AdbPath $adb
 if (-not $deviceIds -or $deviceIds.Count -eq 0) {
     throw "No ready Android devices found. Connect devices and run adb devices."
+}
+
+if ($DeviceId -and $DeviceId.Trim().Length -gt 0) {
+    if ($deviceIds -notcontains $DeviceId) {
+        throw "Requested device '$DeviceId' is not ready. Connected ready devices: $($deviceIds -join ', ')"
+    }
+    $deviceIds = @($DeviceId)
 }
 
 foreach ($deviceId in $deviceIds) {

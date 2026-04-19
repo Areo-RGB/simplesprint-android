@@ -108,6 +108,7 @@ data class SprintSyncUiState(
     val runStatusLabel: String = "Ready",
     val runMarksCount: Int = 0,
     val elapsedDisplay: String = "00.00",
+    val tabletTimerScalePercent: Int = 36,
     val threshold: Double = 0.006,
     val roiCenterX: Double = 0.5,
     val roiWidth: Double = 0.03,
@@ -202,6 +203,8 @@ fun SprintSyncApp(
     onSetAutoResetDelaySeconds: (Int) -> Unit,
     onStopMonitoring: () -> Unit,
     onResetRun: () -> Unit,
+    onDecreaseTabletTimerSize: () -> Unit,
+    onIncreaseTabletTimerSize: () -> Unit,
     onAssignRole: (String, SessionDeviceRole) -> Unit,
     onAssignCameraFacing: (String, SessionCameraFacing) -> Unit,
     onUpdateThreshold: (Double) -> Unit,
@@ -256,6 +259,7 @@ fun SprintSyncApp(
             if (useTabletMinimalMonitoringUi) {
                 TabletMinimalMonitoringScreen(
                     elapsedDisplay = uiState.elapsedDisplay,
+                    tabletTimerScalePercent = uiState.tabletTimerScalePercent,
                     runStatusLabel = uiState.runStatusLabel,
                     canReset = shouldShowMonitoringResetAction(
                         isHost = uiState.isHost,
@@ -263,6 +267,8 @@ fun SprintSyncApp(
                         stoppedSensorNanos = uiState.stoppedSensorNanos,
                     ),
                     onResetRun = onResetRun,
+                    onDecreaseTimerSize = onDecreaseTabletTimerSize,
+                    onIncreaseTimerSize = onIncreaseTabletTimerSize,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -623,17 +629,21 @@ fun SprintSyncApp(
 @Composable
 private fun TabletMinimalMonitoringScreen(
     elapsedDisplay: String,
+    tabletTimerScalePercent: Int,
     runStatusLabel: String,
     canReset: Boolean,
     onResetRun: () -> Unit,
+    onDecreaseTimerSize: () -> Unit,
+    onIncreaseTimerSize: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val tabletTimerColor = Color(0xFFFFE44D)
     BoxWithConstraints(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.background),
+            .background(Color.Black),
     ) {
         val timerFontSize = with(LocalDensity.current) {
-            (minOf(maxWidth, maxHeight) * 0.30f).toSp()
+            (minOf(maxWidth, maxHeight) * (tabletTimerScalePercent / 100f)).toSp()
         }
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
@@ -645,26 +655,47 @@ private fun TabletMinimalMonitoringScreen(
                     text = elapsedDisplay,
                     style = TextStyle(
                         fontSize = timerFontSize,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.Black,
                         letterSpacing = 1.sp,
                         textAlign = TextAlign.Center,
                     ),
+                    color = tabletTimerColor,
                     maxLines = 1,
                 )
                 Text(
                     text = runStatusLabel,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = Color.Gray,
+                    color = tabletTimerColor.copy(alpha = 0.85f),
                 )
             }
-            OutlinedButton(
-                onClick = onResetRun,
-                enabled = canReset,
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 26.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Reset Run")
+                OutlinedButton(
+                    onClick = onDecreaseTimerSize,
+                    enabled = tabletTimerScalePercent > 28,
+                    border = BorderStroke(1.dp, tabletTimerColor.copy(alpha = 0.7f)),
+                ) {
+                    Text("-", color = tabletTimerColor)
+                }
+                OutlinedButton(
+                    onClick = onResetRun,
+                    enabled = canReset,
+                    border = BorderStroke(1.dp, tabletTimerColor.copy(alpha = 0.7f)),
+                ) {
+                    Text("Reset Run", color = tabletTimerColor)
+                }
+                OutlinedButton(
+                    onClick = onIncreaseTimerSize,
+                    enabled = tabletTimerScalePercent < 52,
+                    border = BorderStroke(1.dp, tabletTimerColor.copy(alpha = 0.7f)),
+                ) {
+                    Text("+", color = tabletTimerColor)
+                }
             }
         }
     }
@@ -787,7 +818,7 @@ private fun SetupActionsCard(
                 )
             }
             Text(
-                text = "Host tablet: turn on hotspot in Android settings, then tap Host. Other devices: join that hotspot, then tap Connect.",
+                text = setupNetworkInstructionText(BuildConfig.TCP_HOST_IP),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray,
             )
@@ -846,7 +877,7 @@ private fun LobbyPeersCard(
             SectionHeader("Peers")
             val peerNames = devices
                 .filterNot { it.isLocal }
-                .sortedBy { deviceSortOrderKey(it.name) }
+                .sortedBy { mapDeviceNameForUi(it.name).lowercase() }
                 .map { mapDeviceNameForUi(it.name) }
             if (peerNames.isEmpty()) {
                 Text("No peers connected yet.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
@@ -888,7 +919,7 @@ private fun DeviceAssignmentsCard(
                 )
             }
             devices
-                .sortedBy { deviceSortOrderKey(it.name) }
+                .sortedBy { mapDeviceNameForUi(it.name).lowercase() }
                 .forEach { device ->
                     DeviceAssignmentRow(
                         device = device,
@@ -2173,7 +2204,7 @@ private fun ConnectedDevicesListCard(devices: List<SessionDevice>, showDebugInfo
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             SectionHeader("Connected Devices")
             devices
-                .sortedBy { deviceSortOrderKey(it.name) }
+                .sortedBy { mapDeviceNameForUi(it.name).lowercase() }
                 .forEach { device ->
                     Text(if (device.isLocal) "${mapDeviceNameForUi(device.name)} (Local)" else mapDeviceNameForUi(device.name))
                     if (showDebugInfo) {
@@ -2307,14 +2338,28 @@ internal fun shouldShowHostConnectedDeviceCards(
 internal fun shouldShowDisplayRelayControls(mode: SessionOperatingMode): Boolean =
     mode == SessionOperatingMode.SINGLE_DEVICE
 
-private fun mapDeviceNameForUi(name: String): String =
-    when (name) {
-        "CPH2399" -> "Start"
-        "23021RAA2Y", "23021 RAA2Y" -> "5m"
-        "EML-L29" -> "10m"
-        "Pixel 7" -> "20m"
-        else -> name
+private fun mapDeviceNameForUi(name: String): String {
+    val trimmed = name.trim()
+    if (trimmed.isEmpty()) {
+        return "Unknown Device"
     }
+    if (trimmed.equals("2410CRP4CG", ignoreCase = true)) {
+        return "Xiaomi Pad 7"
+    }
+    if (trimmed.equals("23021RAA2Y", ignoreCase = true) || trimmed.equals("23021 RAA2Y", ignoreCase = true)) {
+        return "Xiaomi Phone ($trimmed)"
+    }
+    if (Regex("^CPH\\d{4,}$", RegexOption.IGNORE_CASE).matches(trimmed)) {
+        return "OnePlus Phone ($trimmed)"
+    }
+    if (trimmed.equals("EML-L29", ignoreCase = true)) {
+        return "Huawei Phone ($trimmed)"
+    }
+    if (Regex("^[A-Z]{3}-[A-Z0-9]{2,}$", RegexOption.IGNORE_CASE).matches(trimmed)) {
+        return "Android Device ($trimmed)"
+    }
+    return trimmed
+}
 
 private fun normalizedDeviceNameForDisplay(name: String): String {
     val trimmed = name.trim()
@@ -2342,15 +2387,6 @@ private fun normalizedDeviceNameForDisplay(name: String): String {
     }
     return trimmed
 }
-
-private fun deviceSortOrderKey(name: String): Int =
-    when (mapDeviceNameForUi(name)) {
-        "Start" -> 0
-        "5m" -> 1
-        "10m" -> 2
-        "20m" -> 3
-        else -> 4
-    }
 
 internal fun shouldShowMonitoringRoleAndToggles(mode: SessionOperatingMode): Boolean =
     mode != SessionOperatingMode.SINGLE_DEVICE
@@ -2383,6 +2419,10 @@ internal fun shouldShowSetupConnectAction(showTabletRoleChoice: Boolean, tabletA
     !tabletAlwaysHost
 
 internal fun setupConnectButtonLabel(): String = "Connect to Tablet Host"
+
+internal fun setupNetworkInstructionText(hostIp: String): String =
+    "Host tablet: connect to the same Wi-Fi network, then tap Host. " +
+        "Other devices: connect to the same Wi-Fi, ensure tablet server is running at $hostIp, then tap Connect."
 
 internal fun shouldUseTabletMinimalMonitoringUi(
     tabletAlwaysHost: Boolean,

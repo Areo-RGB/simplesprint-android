@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         private const val NSD_SERVICE_TYPE = "_simplesprint._tcp."
         private const val PERMISSIONS_REQUEST_CODE = 7301
         private const val SENSOR_ELAPSED_PROJECTION_MAX_AGE_NANOS = 3_000_000_000L
-        private const val TIMER_REFRESH_INTERVAL_MS = 100L
+        private const val TIMER_REFRESH_INTERVAL_MS = 33L
         private const val TAG = "SprintSyncRuntime"
         private const val MAX_PENDING_LAPS = 100
         private const val LOCAL_CAPTURE_RETRY_BACKOFF_MS = 1_500L
@@ -77,6 +77,9 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         private const val HOST_DISCOVERY_HINT_DELAY_MS = 8_000L
         private const val LOW_LATENCY_WIFI_MIN_API = 29
         private const val MONITORING_WIFI_LOCK_TAG = "SprintSyncMonitoringWifiLock"
+        private const val TABLET_TIMER_SCALE_MIN_PERCENT = 28
+        private const val TABLET_TIMER_SCALE_MAX_PERCENT = 52
+        private const val TABLET_TIMER_SCALE_STEP_PERCENT = 4
     }
 
     private lateinit var sensorNativeController: SensorNativeController
@@ -100,6 +103,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     private var autoResetEnabled: Boolean = false
     @Volatile
     private var autoResetDelaySeconds: Int = 3
+    private var tabletTimerScalePercent: Int = 36
     private var pendingAutoResetJob: Job? = null
     private var pendingAutoResetRunSignature: String? = null
     private var completedAutoResetRunSignature: String? = null
@@ -111,8 +115,11 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     private val displayHostDeviceNamesByEndpointId = linkedMapOf<String, String>()
     private val displayLatestLapByEndpointId = linkedMapOf<String, Long>()
     private var lastRelayedStopSensorNanos: Long? = null
+    private var displayRelayLocalStartElapsedRealtimeMs: Long? = null
+    private var displayRelayActiveStartSensorNanos: Long? = null
     private var displayReconnectionPending: Boolean = false
     private val pendingLapResults = ArrayDeque<SessionLapResultMessage>()
+    private val pendingAutoConnectEndpointIds = mutableSetOf<String>()
     private var pendingPermissionScope: PermissionScope = PermissionScope.NETWORK_ONLY
     private var lastNativeFrameStatsRealtimeMs: Long = 0L
     private var lastAnalysisWidth: Int? = null
@@ -121,6 +128,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     private var lastCaptureDebugKey: String? = null
     private var monitoringWifiLock: WifiManager.WifiLock? = null
     private var monitoringWifiLockMode: MonitoringWifiLockMode? = null
+    private var tabletUiBrightnessForced: Boolean = false
     private val isTabletRoleChoiceDevice: Boolean by lazy { detectTabletRoleChoiceDevice() }
     private val isForcedTabletHost: Boolean
         get() = shouldForceTabletHostMode(
@@ -210,10 +218,12 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         lifecycleScope.launch {
             autoResetEnabled = localRepository.loadAutoResetEnabled()
             autoResetDelaySeconds = localRepository.loadAutoResetDelaySeconds()
+            tabletTimerScalePercent = localRepository.loadTabletTimerScalePercent()
             updateUiState {
                 copy(
                     autoResetEnabled = this@MainActivity.autoResetEnabled,
                     autoResetDelaySeconds = this@MainActivity.autoResetDelaySeconds,
+                    tabletTimerScalePercent = this@MainActivity.tabletTimerScalePercent,
                 )
             }
             syncControllerSummaries()
@@ -371,12 +381,13 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     onStartDisplayDiscovery = {
                         requestPermissionsIfNeeded(PermissionScope.NETWORK_ONLY) {
                             if (!isWifiTransportActive()) {
-                                appendEvent("Connect this display device to the tablet hotspot first, then retry.")
+                                appendEvent("Connect this display device to the same Wi-Fi network as the tablet, then retry.")
                                 syncControllerSummaries()
                                 return@requestPermissionsIfNeeded
                             }
                             displayDiscoveryActive = true
                             displayDiscoveredHosts.clear()
+                            clearPendingAutoConnectAttempts()
                             try {
                                 connectionsManager.startDiscovery(
                                     serviceId = DEFAULT_SERVICE_ID,
@@ -387,6 +398,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                                         displayDiscoveryActive = false
                                     }
                                     if (result.isSuccess) {
+                                        tryAutoConnectToEndpoint(
+                                            endpointId = BuildConfig.TCP_HOST_IP,
+                                            errorPrefix = "display fixed-ip connect",
+                                        )
                                         startNsdDiscovery(errorPrefix = "display discovery")
                                         startMissingHostHintTimer()
                                     }
@@ -501,6 +516,26 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     onResetRun = {
                         cancelPendingAutoReset("manual reset")
                         resetRunAndSync()
+                    },
+                    onDecreaseTabletTimerSize = {
+                        val next = (tabletTimerScalePercent - TABLET_TIMER_SCALE_STEP_PERCENT)
+                            .coerceIn(TABLET_TIMER_SCALE_MIN_PERCENT, TABLET_TIMER_SCALE_MAX_PERCENT)
+                        if (next == tabletTimerScalePercent) return@SprintSyncApp
+                        tabletTimerScalePercent = next
+                        updateUiState { copy(tabletTimerScalePercent = tabletTimerScalePercent) }
+                        lifecycleScope.launch {
+                            localRepository.saveTabletTimerScalePercent(tabletTimerScalePercent)
+                        }
+                    },
+                    onIncreaseTabletTimerSize = {
+                        val next = (tabletTimerScalePercent + TABLET_TIMER_SCALE_STEP_PERCENT)
+                            .coerceIn(TABLET_TIMER_SCALE_MIN_PERCENT, TABLET_TIMER_SCALE_MAX_PERCENT)
+                        if (next == tabletTimerScalePercent) return@SprintSyncApp
+                        tabletTimerScalePercent = next
+                        updateUiState { copy(tabletTimerScalePercent = tabletTimerScalePercent) }
+                        lifecycleScope.launch {
+                            localRepository.saveTabletTimerScalePercent(tabletTimerScalePercent)
+                        }
                     },
                     onAssignRole = { deviceId, role ->
                         raceSessionController.assignRole(deviceId, role)
@@ -883,6 +918,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         stopTimerRefreshLoop()
         stopNsdDiscovery()
         stopNsdHosting()
+        applyTabletUiMaxBrightness(forceMax = false)
         logRuntimeDiagnostic("host paused")
         sensorNativeController.onHostPaused()
         super.onPause()
@@ -910,6 +946,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         stopTimerRefreshLoop()
         stopNsdDiscovery()
         stopNsdHosting()
+        applyTabletUiMaxBrightness(forceMax = false)
         releaseMonitoringWifiLock()
         connectionsManager.stopAll()
         connectionsManager.setEventListener(null)
@@ -1000,7 +1037,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
             delay(HOST_DISCOVERY_HINT_DELAY_MS)
             val state = raceSessionController.uiState.value
             if (state.networkRole == SessionNetworkRole.CLIENT && state.connectedEndpoints.isEmpty()) {
-                appendEvent("No host found. Ensure tablet hotspot is on and host mode is running.")
+                appendEvent(
+                    "No host found. Ensure both devices are on the same Wi-Fi and host is running at " +
+                        "${BuildConfig.TCP_HOST_IP}:${BuildConfig.TCP_HOST_PORT}.",
+                )
                 syncControllerSummaries()
             }
         }
@@ -1018,15 +1058,42 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 
+    private fun clearPendingAutoConnectAttempts() {
+        pendingAutoConnectEndpointIds.clear()
+    }
+
+    private fun tryAutoConnectToEndpoint(endpointId: String, errorPrefix: String) {
+        if (endpointId.isBlank()) {
+            return
+        }
+        if (!pendingAutoConnectEndpointIds.add(endpointId)) {
+            return
+        }
+        try {
+            connectionsManager.requestConnection(
+                endpointId = endpointId,
+                endpointName = localEndpointName(),
+            ) { result ->
+                pendingAutoConnectEndpointIds.remove(endpointId)
+                result.exceptionOrNull()?.let { error ->
+                    appendEvent("$errorPrefix error: ${error.localizedMessage ?: "unknown"}")
+                }
+            }
+        } catch (error: Throwable) {
+            pendingAutoConnectEndpointIds.remove(endpointId)
+            appendEvent("$errorPrefix error: ${error.localizedMessage ?: "unknown"}")
+        }
+    }
+
     private fun startClientDiscoveryFlow(errorPrefix: String, setBusy: Boolean) {
         if (setBusy) {
             setSetupBusy(true)
         }
-        updateUiState { copy(networkSummary = "Trying to connect to tablet host...") }
-        appendEvent("Trying to connect to tablet host...")
+        updateUiState { copy(networkSummary = "Trying fixed host ${BuildConfig.TCP_HOST_IP} (NSD fallback)...") }
+        appendEvent("Trying fixed host ${BuildConfig.TCP_HOST_IP} (NSD fallback)...")
         requestPermissionsIfNeeded(PermissionScope.NETWORK_ONLY) {
             if (!isWifiTransportActive()) {
-                appendEvent("Connect this device to the tablet hotspot first, then retry.")
+                appendEvent("Connect this device to the same Wi-Fi network as the tablet, then retry.")
                 if (setBusy) {
                     setSetupBusy(false)
                 }
@@ -1044,6 +1111,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 enabled = false,
                 requireSensorDomainClock = false,
             )
+            clearPendingAutoConnectAttempts()
             connectionsManager.startDiscovery(
                 serviceId = DEFAULT_SERVICE_ID,
                 strategy = SessionConnectionStrategy.POINT_TO_POINT,
@@ -1052,6 +1120,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     appendEvent("$errorPrefix error: ${error.localizedMessage ?: "unknown"}")
                 }
                 if (result.isSuccess) {
+                    tryAutoConnectToEndpoint(
+                        endpointId = BuildConfig.TCP_HOST_IP,
+                        errorPrefix = "$errorPrefix fixed-ip connect",
+                    )
                     startNsdDiscovery(errorPrefix = errorPrefix)
                     startMissingHostHintTimer()
                 }
@@ -1073,21 +1145,14 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     cancelMissingHostHintTimer()
                     val role = state.networkRole
                     if (role == SessionNetworkRole.CLIENT && state.connectedEndpoints.isEmpty()) {
-                        try {
-                            connectionsManager.requestConnection(
-                                endpointId = event.endpointId,
-                                endpointName = localEndpointName(),
-                            ) { result ->
-                                result.exceptionOrNull()?.let { error ->
-                                    appendEvent("auto-connect error: ${error.localizedMessage}")
-                                }
-                            }
-                        } catch (e: Exception) {
-                            appendEvent("auto-connect error: ${e.localizedMessage}")
-                        }
+                        tryAutoConnectToEndpoint(
+                            endpointId = event.endpointId,
+                            errorPrefix = "auto-connect",
+                        )
                     }
                 } else if (event is SessionConnectionEvent.EndpointDisconnected) {
                     if (state.networkRole == SessionNetworkRole.NONE) {
+                        clearPendingAutoConnectAttempts()
                         stopNsdDiscovery()
                         stopNsdHosting()
                         connectionsManager.stopAll()
@@ -1101,20 +1166,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                         displayDiscoveredHosts[event.endpointId] = event.endpointName
                         // Auto-connect if not connected or if reconnection is pending
                         if (displayConnectedHostEndpointId == null || displayReconnectionPending) {
-                            try {
-                                connectionsManager.requestConnection(
-                                    endpointId = event.endpointId,
-                                    endpointName = localEndpointName(),
-                                ) { result ->
-                                    result.exceptionOrNull()?.let { error ->
-                                        appendEvent(
-                                            "auto-display-connect error: ${error.localizedMessage ?: "unknown"}",
-                                        )
-                                    }
-                                }
-                            } catch (error: Throwable) {
-                                appendEvent("auto-display-connect error: ${error.localizedMessage ?: "unknown"}")
-                            }
+                            tryAutoConnectToEndpoint(
+                                endpointId = event.endpointId,
+                                errorPrefix = "auto-display-connect",
+                            )
                         }
                     }
                     is SessionConnectionEvent.EndpointLost -> {
@@ -1144,6 +1199,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                             if (!displayDiscoveryActive) {
                                 displayDiscoveryActive = true
                                 displayDiscoveredHosts.clear()
+                                clearPendingAutoConnectAttempts()
                                 try {
                                     connectionsManager.startDiscovery(
                                         serviceId = DEFAULT_SERVICE_ID,
@@ -1156,6 +1212,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                                             displayDiscoveryActive = false
                                         }
                                         if (result.isSuccess) {
+                                            tryAutoConnectToEndpoint(
+                                                endpointId = BuildConfig.TCP_HOST_IP,
+                                                errorPrefix = "reconnect fixed-ip connect",
+                                            )
                                             startNsdDiscovery(errorPrefix = "reconnect discovery")
                                             startMissingHostHintTimer()
                                         }
@@ -1372,6 +1432,14 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         val clockState = raceSessionController.clockState.value
         val motionBefore = motionDetectionController.uiState.value
         val mode = raceState.operatingMode
+        val isHost = raceState.networkRole == SessionNetworkRole.HOST || mode == SessionOperatingMode.DISPLAY_HOST
+        val useTabletMinimalMonitoringUi = shouldUseTabletMinimalMonitoringUi(
+            tabletAlwaysHost = isForcedTabletHost,
+            stage = raceState.stage,
+            operatingMode = mode,
+            isHost = isHost,
+        )
+        applyTabletUiMaxBrightness(forceMax = useTabletMinimalMonitoringUi)
         syncMonitoringWifiLock(raceState)
         applyRequestedOrientationForMode(mode)
         val shouldRunLocalCapture = shouldRunLocalMonitoring()
@@ -1459,7 +1527,6 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         } else {
             "Idle"
         }
-        val isHost = raceState.networkRole == SessionNetworkRole.HOST || mode == SessionOperatingMode.DISPLAY_HOST
         syncAutoResetScheduler(
             raceState = raceState,
             isHost = isHost,
@@ -1583,11 +1650,36 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         }
         val marksCount = timelineForUi.hostSplitMarks.size + if (timelineForUi.hostStopSensorNanos != null) 1 else 0
 
-        val elapsedDisplay = formatElapsedDisplay(
-            startedSensorNanos = timelineForUi.hostStartSensorNanos,
-            stoppedSensorNanos = timelineForUi.hostStopSensorNanos,
-            monitoringActive = raceState.monitoringActive,
-        )
+        val elapsedDisplay = if (mode == SessionOperatingMode.SINGLE_DEVICE) {
+            val hostStartNanos = timelineForUi.hostStartSensorNanos
+            val hostStopNanos = timelineForUi.hostStopSensorNanos
+            when {
+                hostStartNanos == null -> {
+                    displayRelayLocalStartElapsedRealtimeMs = null
+                    displayRelayActiveStartSensorNanos = null
+                    "00.00"
+                }
+                hostStopNanos != null -> {
+                    val finalDurationNanos = (hostStopNanos - hostStartNanos).coerceAtLeast(0L)
+                    formatElapsedTimerDisplay(finalDurationNanos / 1_000_000L)
+                }
+                else -> {
+                    if (displayRelayActiveStartSensorNanos != hostStartNanos || displayRelayLocalStartElapsedRealtimeMs == null) {
+                        displayRelayActiveStartSensorNanos = hostStartNanos
+                        displayRelayLocalStartElapsedRealtimeMs = SystemClock.elapsedRealtime()
+                    }
+                    val startedRealtimeMs = displayRelayLocalStartElapsedRealtimeMs ?: SystemClock.elapsedRealtime()
+                    val localElapsedMs = (SystemClock.elapsedRealtime() - startedRealtimeMs).coerceAtLeast(0L)
+                    formatElapsedTimerDisplay(localElapsedMs)
+                }
+            }
+        } else {
+            formatElapsedDisplay(
+                startedSensorNanos = timelineForUi.hostStartSensorNanos,
+                stoppedSensorNanos = timelineForUi.hostStopSensorNanos,
+                monitoringActive = raceState.monitoringActive,
+            )
+        }
 
         val cameraModeLabel = if (motionState.observedFps == null) "INIT" else "NORMAL"
         val triggerHistory = motionState.triggerHistory.map { trigger ->
@@ -1685,7 +1777,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 isHost = isHost,
                 localRole = localRole,
                 monitoringConnectionTypeLabel = if (hasPeers) {
-                    "TCP (auto-discovered host:${BuildConfig.TCP_HOST_PORT})"
+                    "TCP (fixed host ${BuildConfig.TCP_HOST_IP}:${BuildConfig.TCP_HOST_PORT}, NSD fallback)"
                 } else {
                     "-"
                 },
@@ -1698,6 +1790,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 runStatusLabel = runStatusLabel,
                 runMarksCount = marksCount,
                 elapsedDisplay = elapsedDisplay,
+                tabletTimerScalePercent = tabletTimerScalePercent,
                 threshold = motionState.config.threshold,
                 roiCenterX = motionState.config.roiCenterX,
                 roiWidth = motionState.config.roiWidth,
@@ -1930,18 +2023,37 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         val model = Build.MODEL?.trim().orEmpty()
         val device = Build.DEVICE?.trim().orEmpty()
         val manufacturer = Build.MANUFACTURER?.trim().orEmpty()
-        if (model.equals("2410CRP4CG", ignoreCase = true)) {
-            return true
-        }
-        if (device.contains("topaz", ignoreCase = true)) {
-            return true
-        }
-        return manufacturer.contains("xiaomi", ignoreCase = true) && model.contains("pad", ignoreCase = true)
+        return isTabletRoleChoiceDeviceModel(
+            model = model,
+            device = device,
+            manufacturer = manufacturer,
+        )
     }
 
     private fun localEndpointName(): String {
+        val configuredName = Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
+            ?.trim()
+            .orEmpty()
+        if (configuredName.isNotEmpty()) {
+            return configuredName
+        }
         val model = Build.MODEL?.trim().orEmpty()
         if (model.isNotEmpty()) {
+            if (model.equals("2410CRP4CG", ignoreCase = true)) {
+                return "Xiaomi Pad 7"
+            }
+            if (model.equals("23021RAA2Y", ignoreCase = true) || model.equals("23021 RAA2Y", ignoreCase = true)) {
+                return "Xiaomi Phone ($model)"
+            }
+            if (Regex("^CPH\\d{4,}$", RegexOption.IGNORE_CASE).matches(model)) {
+                return "OnePlus Phone ($model)"
+            }
+            if (model.equals("EML-L29", ignoreCase = true)) {
+                return "Huawei Phone ($model)"
+            }
+            if (Regex("^[A-Z]{3}-[A-Z0-9]{2,}$", RegexOption.IGNORE_CASE).matches(model)) {
+                return "Android Device ($model)"
+            }
             return model
         }
         val device = Build.DEVICE?.trim().orEmpty()
@@ -2105,6 +2217,20 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         }
     }
 
+    private fun applyTabletUiMaxBrightness(forceMax: Boolean) {
+        if (tabletUiBrightnessForced == forceMax) {
+            return
+        }
+        val attrs = window.attributes
+        attrs.screenBrightness = if (forceMax) {
+            1.0f
+        } else {
+            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
+        window.attributes = attrs
+        tabletUiBrightnessForced = forceMax
+    }
+
     private fun sendLapResultToHost(
         hostEndpoint: String,
         lapMessage: SessionLapResultMessage,
@@ -2234,6 +2360,24 @@ internal fun shouldForceTabletHostMode(
     tabletAlwaysHostFlag: Boolean,
     isTabletRoleChoiceDevice: Boolean,
 ): Boolean = tabletAlwaysHostFlag && isTabletRoleChoiceDevice
+
+internal fun isTabletRoleChoiceDeviceModel(
+    model: String,
+    device: String,
+    manufacturer: String,
+): Boolean {
+    val normalizedModel = model.trim()
+    val normalizedDevice = device.trim()
+    val normalizedManufacturer = manufacturer.trim()
+    if (normalizedModel.equals("2410CRP4CG", ignoreCase = true)) {
+        return true
+    }
+    if (normalizedDevice.equals("uke", ignoreCase = true)) {
+        return true
+    }
+    return normalizedManufacturer.contains("xiaomi", ignoreCase = true) &&
+        normalizedModel.contains("pad", ignoreCase = true)
+}
 
 internal fun resolveAutoStartRole(
     isForcedTabletHost: Boolean,
@@ -2403,7 +2547,7 @@ internal fun connectionFailureGuidanceMessage(
     if (!isTcpOnly || sessionNetworkRole != SessionNetworkRole.CLIENT || connectionResult.connected) {
         return null
     }
-    return "Connection failed. Turn off mobile data / use Wi-Fi only."
+    return "Connection failed. Confirm same Wi-Fi and host server at 192.168.0.103:9000."
 }
 
 internal fun deriveSaveableRunDurationNanos(

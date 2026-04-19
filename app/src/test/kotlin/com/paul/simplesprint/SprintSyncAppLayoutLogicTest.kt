@@ -192,6 +192,14 @@ class SprintSyncAppLayoutLogicTest {
     }
 
     @Test
+    fun `setup instruction text explains same wifi and fixed host ip`() {
+        val message = setupNetworkInstructionText("192.168.0.103")
+
+        assertTrue(message.contains("same Wi-Fi"))
+        assertTrue(message.contains("192.168.0.103"))
+    }
+
+    @Test
     fun `tablet always host uses minimal monitoring ui only in network monitoring host state`() {
         assertTrue(
             shouldUseTabletMinimalMonitoringUi(
