@@ -104,10 +104,6 @@ if ($connectedSerials -notcontains $TabletHostSerial) {
     throw "Tablet host serial '$TabletHostSerial' is not connected. Connected serials: $($connectedSerials -join ', ')"
 }
 
-Invoke-Step -Name "Build JNI libraries" -Action {
-    cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 24 -o app/src/main/jniLibs build --release -p sprint-sync-protocol-jni | Out-Host
-}
-
 $clientSerials = @($connectedSerials | Where-Object { $_ -ne $TabletHostSerial })
 
 if ($clientSerials.Count -gt 0) {

@@ -73,6 +73,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.5.3")
     implementation("androidx.camera:camera-view:1.5.3")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
+    implementation("com.google.flatbuffers:flatbuffers-java:24.3.25")
     implementation("com.google.guava:guava:33.5.0-android")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")

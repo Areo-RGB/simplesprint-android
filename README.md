@@ -7,17 +7,13 @@ This repository is now standardized as an Android-only project.
 - `app/`
   - Android application module (`:app`)
   - Kotlin source, resources, tests, manifest
-- `crates/sprint-sync-protocol/`
-  - Shared Rust protocol crate
-- `crates/sprint-sync-protocol-jni/`
-  - Rust JNI bridge used by Android
 - `gradlew`, `gradlew.bat`, `settings.gradle.kts`, `build.gradle.kts`
   - Single canonical Gradle root entrypoint
 
 ## Standard Commands
 
-- Build JNI libraries:
-  - `cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 24 -o app/src/main/jniLibs build --release -p sprint-sync-protocol-jni`
+- Generate FlatBuffers Java classes:
+  - `flatc --java -o app/src/main/java/ app/src/main/fbs/SprintSyncTelemetry.fbs`
 - Build debug APK:
   - `gradlew.bat :app:assembleDebug`
 - Build release APK:

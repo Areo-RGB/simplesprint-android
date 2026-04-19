@@ -1,6 +1,0 @@
-[workspace]
-members = [
-  "crates/sprint-sync-protocol",
-  "crates/sprint-sync-protocol-jni",
-]
-resolver = "2"
