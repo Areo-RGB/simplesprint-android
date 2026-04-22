@@ -1,5 +1,6 @@
 package com.paul.simplesprint.sensor_native
 
+import android.annotation.SuppressLint
 import android.hardware.camera2.CaptureRequest
 import android.os.Handler
 import android.os.SystemClock
@@ -162,6 +163,7 @@ internal class SensorNativeCameraSession(
         mainHandler.postDelayed(lockRunnable, SensorNativeCameraPolicy.AE_AWB_WARMUP_MS)
     }
 
+    @SuppressLint("UnsafeOptInUsageError")
     private fun applyCamera2Options(
         binding: CameraBinding,
         fpsRange: Range<Int>,

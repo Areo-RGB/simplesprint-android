@@ -25,6 +25,21 @@ This repository is now standardized as an Android-only project.
 - Install existing release APK:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\Install-SimpleSprintRelease.ps1`
 
+## Linting and Formatting
+
+- Fast agent checks (ktlint + detekt):
+  - `gradlew.bat agentQuickCheck`
+- Full agent quality gate (ktlint + detekt + Android lint):
+  - `gradlew.bat agentCheck`
+- Auto-fix formatting + safe lint fixes:
+  - `gradlew.bat agentFix`
+- Print report locations for tooling:
+  - `gradlew.bat agentReportPaths`
+- Refresh Detekt and ktlint baselines after intentional large refactors:
+  - `gradlew.bat agentRefreshBaselines`
+
+Generated reports are written under `app/build/reports/` and are suitable for CI/agent parsing (Checkstyle + SARIF + HTML/XML where available).
+
 ## Conventions
 
 - Use root Gradle (`./gradlew` or `gradlew.bat`) only.

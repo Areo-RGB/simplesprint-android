@@ -1,7 +1,7 @@
 package com.paul.simplesprint.core.models
 
-import org.json.JSONException
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 data class LastRunResult(

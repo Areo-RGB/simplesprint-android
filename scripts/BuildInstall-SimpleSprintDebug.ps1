@@ -85,7 +85,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
 $adb = Resolve-AdbPath
-$connectedDevices = Get-ConnectedDevices -AdbPath $adb
+[array]$connectedDevices = @(Get-ConnectedDevices -AdbPath $adb)
 if (-not $connectedDevices -or $connectedDevices.Count -eq 0) {
     throw "No ready Android devices found. Connect devices and run adb devices."
 }

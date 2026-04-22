@@ -490,11 +490,7 @@ object TelemetryEnvelopeFlatBufferCodec {
         }.getOrNull()
     }
 
-    private fun finishEnvelope(
-        builder: FlatBufferBuilder,
-        payloadType: Byte,
-        payloadOffset: Int,
-    ): ByteArray {
+    private fun finishEnvelope(builder: FlatBufferBuilder, payloadType: Byte, payloadOffset: Int): ByteArray {
         val envelopeOffset = TelemetryEnvelope.createTelemetryEnvelope(
             builder,
             payloadType,
@@ -509,10 +505,7 @@ object TelemetryEnvelopeFlatBufferCodec {
         return if (text.isEmpty()) 0 else builder.createString(text)
     }
 
-    private fun createSplitMarkOffsets(
-        builder: FlatBufferBuilder,
-        marks: List<SessionSplitMark>,
-    ): IntArray? {
+    private fun createSplitMarkOffsets(builder: FlatBufferBuilder, marks: List<SessionSplitMark>): IntArray? {
         val offsets = IntArray(marks.size)
         for (index in marks.indices) {
             val mark = marks[index]
@@ -528,10 +521,7 @@ object TelemetryEnvelopeFlatBufferCodec {
         return offsets
     }
 
-    private fun decodeSplitMarks(
-        length: Int,
-        accessor: (Int) -> FbSessionSplitMark?,
-    ): List<SessionSplitMark> {
+    private fun decodeSplitMarks(length: Int, accessor: (Int) -> FbSessionSplitMark?): List<SessionSplitMark> {
         val marks = mutableListOf<SessionSplitMark>()
         for (index in 0 until length) {
             val encodedMark = accessor(index) ?: continue

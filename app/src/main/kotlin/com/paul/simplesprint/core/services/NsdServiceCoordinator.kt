@@ -115,10 +115,7 @@ internal class NsdServiceCoordinator(
         backend.unregisterService(listener)
     }
 
-    fun startDiscovery(
-        onHostResolved: (DiscoveredHost) -> Unit,
-        onComplete: (Result<Unit>) -> Unit,
-    ) {
+    fun startDiscovery(onHostResolved: (DiscoveredHost) -> Unit, onComplete: (Result<Unit>) -> Unit) {
         stopDiscovery()
         discoveredHostCallback = onHostResolved
         discoveredHostKeys.clear()

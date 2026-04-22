@@ -5,9 +5,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.paul.simplesprint.features.race_session.SessionOperatingMode
 import com.paul.simplesprint.features.race_session.SessionStage
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SprintSyncAppLayoutLogicTest {

@@ -458,9 +458,30 @@ data class SessionDeviceTelemetryMessage(
             val sensitivity = decoded.optInt("sensitivity", Int.MIN_VALUE)
             val clockSynced = if (decoded.has("clockSynced")) decoded.optBoolean("clockSynced", false) else false
             val timestampMillis = decoded.optLong("timestampMillis", Long.MIN_VALUE)
-            val latencyMs = if (!decoded.has("latencyMs") || decoded.isNull("latencyMs")) null else decoded.optInt("latencyMs", -1)
-            val analysisWidth = if (!decoded.has("analysisWidth") || decoded.isNull("analysisWidth")) null else decoded.optInt("analysisWidth", -1)
-            val analysisHeight = if (!decoded.has("analysisHeight") || decoded.isNull("analysisHeight")) null else decoded.optInt("analysisHeight", -1)
+            val latencyMs = if (!decoded.has("latencyMs") || decoded.isNull("latencyMs")) {
+                null
+            } else {
+                decoded.optInt(
+                    "latencyMs",
+                    -1,
+                )
+            }
+            val analysisWidth = if (!decoded.has("analysisWidth") || decoded.isNull("analysisWidth")) {
+                null
+            } else {
+                decoded.optInt(
+                    "analysisWidth",
+                    -1,
+                )
+            }
+            val analysisHeight = if (!decoded.has("analysisHeight") || decoded.isNull("analysisHeight")) {
+                null
+            } else {
+                decoded.optInt(
+                    "analysisHeight",
+                    -1,
+                )
+            }
             if (stableDeviceId.isEmpty() || sensitivity == Int.MIN_VALUE || timestampMillis == Long.MIN_VALUE) {
                 return null
             }

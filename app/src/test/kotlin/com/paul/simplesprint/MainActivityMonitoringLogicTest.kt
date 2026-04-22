@@ -4,16 +4,16 @@ import android.content.pm.ActivityInfo
 import com.paul.simplesprint.core.models.SavedRunResult
 import com.paul.simplesprint.core.services.SessionConnectionEvent
 import com.paul.simplesprint.features.race_session.SessionDeviceRole
-import com.paul.simplesprint.features.race_session.SessionStage
+import com.paul.simplesprint.features.race_session.SessionNetworkRole
 import com.paul.simplesprint.features.race_session.SessionOperatingMode
 import com.paul.simplesprint.features.race_session.SessionSplitMark
-import com.paul.simplesprint.features.race_session.SessionNetworkRole
+import com.paul.simplesprint.features.race_session.SessionStage
+import java.util.Date
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.Date
-import java.util.Locale
 
 class MainActivityMonitoringLogicTest {
     @Test
@@ -399,8 +399,14 @@ class MainActivityMonitoringLogicTest {
         val history = buildSplitHistoryForTimeline(
             startedSensorNanos = 1_000_000_000L,
             splitMarks = listOf(
-                SessionSplitMark(role = com.paul.simplesprint.features.race_session.SessionDeviceRole.SPLIT1, hostSensorNanos = 11_000_000_000L),
-                SessionSplitMark(role = com.paul.simplesprint.features.race_session.SessionDeviceRole.SPLIT2, hostSensorNanos = 21_000_000_000L),
+                SessionSplitMark(
+                    role = com.paul.simplesprint.features.race_session.SessionDeviceRole.SPLIT1,
+                    hostSensorNanos = 11_000_000_000L,
+                ),
+                SessionSplitMark(
+                    role = com.paul.simplesprint.features.race_session.SessionDeviceRole.SPLIT2,
+                    hostSensorNanos = 21_000_000_000L,
+                ),
             ),
         )
 

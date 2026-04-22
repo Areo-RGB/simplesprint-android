@@ -1,9 +1,8 @@
 package com.paul.simplesprint
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,15 +17,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AssistChip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -59,12 +59,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.paul.simplesprint.features.race_session.SessionCameraFacing
 import com.paul.simplesprint.core.models.SavedRunCheckpointResult
 import com.paul.simplesprint.core.models.SavedRunResult
+import com.paul.simplesprint.features.race_session.SessionAnchorState
+import com.paul.simplesprint.features.race_session.SessionCameraFacing
 import com.paul.simplesprint.features.race_session.SessionDevice
 import com.paul.simplesprint.features.race_session.SessionDeviceRole
-import com.paul.simplesprint.features.race_session.SessionAnchorState
 import com.paul.simplesprint.features.race_session.SessionNetworkRole
 import com.paul.simplesprint.features.race_session.SessionOperatingMode
 import com.paul.simplesprint.features.race_session.SessionStage
@@ -281,266 +281,270 @@ fun SprintSyncApp(
                         ),
                     verticalArrangement = Arrangement.spacedBy(if (isDisplayHostMode) 4.dp else 12.dp),
                 ) {
-            item {
-                if (!isDisplayHostMode) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = when {
-                                uiState.operatingMode == SessionOperatingMode.DISPLAY_HOST -> "Display Monitor"
-                                uiState.operatingMode == SessionOperatingMode.SINGLE_DEVICE -> "Single Device"
-                                uiState.stage == SessionStage.SETUP -> "Setup Session"
-                                uiState.stage == SessionStage.LOBBY -> "Race Lobby"
-                                else -> "Monitoring"
-                            },
-                            style = MaterialTheme.typography.headlineSmall,
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (uiState.stage == SessionStage.LOBBY && uiState.isHost) {
-                                TextButton(onClick = onStopHosting) {
-                                    Text("Stop Hosting")
-                                }
-                            }
-                            if (
-                                uiState.stage == SessionStage.MONITORING &&
-                                (uiState.isHost || uiState.operatingMode != SessionOperatingMode.NETWORK_RACE)
+                    item {
+                        if (!isDisplayHostMode) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                SecondaryButton(text = "Stop", onClick = onStopMonitoring)
-                                if (
-                                    shouldShowMonitoringTopSavedResultsButton(
-                                        stage = uiState.stage,
-                                        isHost = uiState.isHost,
-                                        operatingMode = uiState.operatingMode,
-                                        deviceProfile = BuildConfig.DEVICE_PROFILE,
-                                    )
+                                Text(
+                                    text = when {
+                                        uiState.operatingMode == SessionOperatingMode.DISPLAY_HOST -> "Display Monitor"
+                                        uiState.operatingMode == SessionOperatingMode.SINGLE_DEVICE -> "Single Device"
+                                        uiState.stage == SessionStage.SETUP -> "Setup Session"
+                                        uiState.stage == SessionStage.LOBBY -> "Race Lobby"
+                                        else -> "Monitoring"
+                                    },
+                                    style = MaterialTheme.typography.headlineSmall,
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    TextButton(onClick = onOpenSavedResultsDialog) {
-                                        Text("Show Results")
+                                    if (uiState.stage == SessionStage.LOBBY && uiState.isHost) {
+                                        TextButton(onClick = onStopHosting) {
+                                            Text("Stop Hosting")
+                                        }
+                                    }
+                                    if (
+                                        uiState.stage == SessionStage.MONITORING &&
+                                        (uiState.isHost || uiState.operatingMode != SessionOperatingMode.NETWORK_RACE)
+                                    ) {
+                                        SecondaryButton(text = "Stop", onClick = onStopMonitoring)
+                                        if (
+                                            shouldShowMonitoringTopSavedResultsButton(
+                                                stage = uiState.stage,
+                                                isHost = uiState.isHost,
+                                                operatingMode = uiState.operatingMode,
+                                                deviceProfile = BuildConfig.DEVICE_PROFILE,
+                                            )
+                                        ) {
+                                            TextButton(onClick = onOpenSavedResultsDialog) {
+                                                Text("Show Results")
+                                            }
+                                        }
+                                    }
+                                    TextButton(onClick = onToggleDebug) {
+                                        Text(if (uiState.debugEnabled) "Debug On" else "Debug Off")
                                     }
                                 }
                             }
-                            TextButton(onClick = onToggleDebug) {
-                                Text(if (uiState.debugEnabled) "Debug On" else "Debug Off")
+                        }
+                    }
+
+                    if (showDebugInfo && uiState.stage != SessionStage.MONITORING && !isDisplayHostMode) {
+                        item {
+                            StatusCard(uiState)
+                        }
+                    }
+
+                    when (uiState.stage) {
+                        SessionStage.SETUP -> {
+                            if (shouldShowSetupPermissionWarning(
+                                    uiState.permissionGranted,
+                                    uiState.deniedPermissions,
+                                )
+                            ) {
+                                item {
+                                    PermissionWarningCard(uiState.deniedPermissions)
+                                }
                             }
-                        }
-                    }
-                }
-            }
-
-            if (showDebugInfo && uiState.stage != SessionStage.MONITORING && !isDisplayHostMode) {
-                item {
-                    StatusCard(uiState)
-                }
-            }
-
-            when (uiState.stage) {
-                SessionStage.SETUP -> {
-                    if (shouldShowSetupPermissionWarning(uiState.permissionGranted, uiState.deniedPermissions)) {
-                        item {
-                            PermissionWarningCard(uiState.deniedPermissions)
-                        }
-                    }
-                    item {
-                        LocalDeviceIdentityCard(deviceName = localDevice?.name.orEmpty())
-                    }
-                    item {
-                        SetupActionsCard(
-                            permissionGranted = uiState.permissionGranted,
-                            setupBusy = uiState.setupBusy,
-                            onRequestPermissions = onRequestPermissions,
-                            onStartHosting = onStartHosting,
-                            onStartSingleDevice = onStartSingleDevice,
-                            onStartDisplayHost = onStartDisplayHost,
-                            onReconnectClient = onReconnectClient,
-                            showTabletRoleChoice = showTabletRoleChoice,
-                            tabletAlwaysHost = tabletAlwaysHost,
-                        )
-                    }
-                    item {
-                        ConnectedDevicesListCard(
-                            devices = uiState.devices,
-                            showDebugInfo = showDebugInfo,
-                        )
-                    }
-                    item {
-                        AppVersionCard()
-                    }
-                }
-
-                SessionStage.LOBBY -> {
-                    item {
-                        LobbyActionsCard(
-                            isHost = uiState.isHost,
-                            canStartMonitoring = uiState.canStartMonitoring,
-                            timelineFinished = uiState.startedSensorNanos != null && uiState.stoppedSensorNanos != null,
-                            onStartMonitoring = onStartMonitoring,
-                            onResetRun = onResetRun,
-                        )
-                    }
-                    if (
-                        shouldShowLobbyAutoResetSettingsCard(
-                            tabletAlwaysHost = tabletAlwaysHost,
-                            stage = uiState.stage,
-                            operatingMode = uiState.operatingMode,
-                            isHost = uiState.isHost,
-                        )
-                    ) {
-                        item {
-                            LobbySettingsCard(
-                                autoResetEnabled = uiState.autoResetEnabled,
-                                autoResetDelaySeconds = uiState.autoResetDelaySeconds,
-                                onSetAutoResetEnabled = onSetAutoResetEnabled,
-                                onSetAutoResetDelaySeconds = onSetAutoResetDelaySeconds,
-                            )
-                        }
-                    }
-                    item {
-                        LobbyPeersCard(
-                            devices = uiState.devices,
-                            hasConnectedPeers = uiState.hasConnectedPeers,
-                            connectionTypeLabel = uiState.monitoringConnectionTypeLabel,
-                            syncModeLabel = uiState.monitoringSyncModeLabel,
-                            latencyMs = uiState.monitoringLatencyMs,
-                        )
-                    }
-                    item {
-                        val hideLocalDeviceInAssignments = uiState.isControllerOnlyHost ||
-                            (BuildConfig.HOST_CONTROLLER_ONLY && uiState.networkRole == SessionNetworkRole.HOST)
-                        DeviceAssignmentsCard(
-                            devices = if (hideLocalDeviceInAssignments) {
-                                uiState.devices.filterNot { it.isLocal || it.id == localDevice?.id }
-                            } else {
-                                uiState.devices
-                            },
-                            editable = uiState.networkRole == SessionNetworkRole.HOST,
-                            showDebugInfo = showDebugInfo,
-                            onAssignRole = onAssignRole,
-                            onAssignCameraFacing = onAssignCameraFacing,
-                        )
-                    }
-                }
-
-                SessionStage.MONITORING -> {
-                    if (uiState.operatingMode == SessionOperatingMode.DISPLAY_HOST) {
-                        item {
-                            DisplayResultsCard(
-                                rows = uiState.displayLapRows,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .fillParentMaxHeight(),
-                            )
-                        }
-                    } else {
-                        item {
-                            RunMetricsCard(
-                                uiState = uiState,
-                                isHost = uiState.isHost,
-                                showDebugInfo = showDebugInfo,
-                                onResetRun = onResetRun,
-                                onOpenSaveResultDialog = onOpenSaveResultDialog,
-                                onOpenRunDetailsOverlay = onOpenRunDetailsOverlay,
-                            )
-                        }
-                        if (uiState.clockLockWarningText != null) {
                             item {
-                                ClockWarningCard(uiState.clockLockWarningText)
+                                LocalDeviceIdentityCard(deviceName = localDevice?.name.orEmpty())
                             }
-                        }
-                        if (!effectiveControllerOnlyHost) {
                             item {
-                                MonitoringSummaryCard(
-                                    isHost = uiState.isHost,
-                                    controllerOnlyHost = effectiveControllerOnlyHost,
-                                    localRole = uiState.localRole,
-                                    localCameraFacing = localDevice?.cameraFacing ?: SessionCameraFacing.FRONT,
+                                SetupActionsCard(
+                                    permissionGranted = uiState.permissionGranted,
+                                    setupBusy = uiState.setupBusy,
+                                    onRequestPermissions = onRequestPermissions,
+                                    onStartHosting = onStartHosting,
+                                    onStartSingleDevice = onStartSingleDevice,
+                                    onStartDisplayHost = onStartDisplayHost,
+                                    onReconnectClient = onReconnectClient,
+                                    showTabletRoleChoice = showTabletRoleChoice,
+                                    tabletAlwaysHost = tabletAlwaysHost,
+                                )
+                            }
+                            item {
+                                ConnectedDevicesListCard(
+                                    devices = uiState.devices,
                                     showDebugInfo = showDebugInfo,
-                                    connectionTypeLabel = uiState.monitoringConnectionTypeLabel,
-                                syncModeLabel = uiState.monitoringSyncModeLabel,
-                                latencyMs = uiState.monitoringLatencyMs,
-                                localAnalysisResolutionLabel = if (uiState.localAnalysisWidth != null && uiState.localAnalysisHeight != null) {
-                                    "${uiState.localAnalysisWidth}x${uiState.localAnalysisHeight}"
-                                } else {
-                                    "-"
-                                },
-                                userMonitoringEnabled = uiState.userMonitoringEnabled,
-                                    onSetMonitoringEnabled = onSetMonitoringEnabled,
-                                    onAssignLocalCameraFacing = { facing ->
-                                        localDevice?.let { device ->
-                                            onAssignCameraFacing(device.id, facing)
-                                        }
-                                    },
-                                    effectiveShowPreview = effectiveShowPreview,
-                                    onShowPreviewChanged = { showPreview = it },
-                                    sensitivity = thresholdToSensitivity(uiState.threshold),
-                                    onUpdateSensitivity = { nextSensitivity ->
-                                        onUpdateThreshold(sensitivityToThreshold(nextSensitivity.toInt()))
-                                    },
-                                    previewViewFactory = previewViewFactory,
-                                    roiCenterX = uiState.roiCenterX,
-                                    roiWidth = uiState.roiWidth,
-                                    operatingMode = uiState.operatingMode,
-                                    discoveredDisplayHosts = uiState.discoveredEndpoints,
-                                    displayConnectedHostName = uiState.displayConnectedHostName,
-                                    displayDiscoveryActive = uiState.displayDiscoveryActive,
-                                    anchorDeviceName = uiState.anchorDeviceName,
-                                    anchorState = uiState.anchorState,
-                                    clockLockReasonLabel = uiState.clockLockReasonLabel,
-                                    onStartDisplayDiscovery = onStartDisplayDiscovery,
-                                    onConnectDisplayHost = onConnectDisplayHost,
+                                )
+                            }
+                            item {
+                                AppVersionCard()
+                            }
+                        }
+
+                        SessionStage.LOBBY -> {
+                            item {
+                                LobbyActionsCard(
+                                    isHost = uiState.isHost,
+                                    canStartMonitoring = uiState.canStartMonitoring,
+                                    timelineFinished = uiState.startedSensorNanos != null && uiState.stoppedSensorNanos != null,
+                                    onStartMonitoring = onStartMonitoring,
                                     onResetRun = onResetRun,
                                 )
                             }
-                        }
-                        if (
-                            shouldShowHostConnectedDeviceCards(
-                                stage = uiState.stage,
-                                operatingMode = uiState.operatingMode,
-                                isHost = uiState.isHost,
-                                deviceProfile = BuildConfig.DEVICE_PROFILE,
-                            ) && uiState.connectedDeviceMonitoringCards.isNotEmpty()
-                        ) {
+                            if (
+                                shouldShowLobbyAutoResetSettingsCard(
+                                    tabletAlwaysHost = tabletAlwaysHost,
+                                    stage = uiState.stage,
+                                    operatingMode = uiState.operatingMode,
+                                    isHost = uiState.isHost,
+                                )
+                            ) {
+                                item {
+                                    LobbySettingsCard(
+                                        autoResetEnabled = uiState.autoResetEnabled,
+                                        autoResetDelaySeconds = uiState.autoResetDelaySeconds,
+                                        onSetAutoResetEnabled = onSetAutoResetEnabled,
+                                        onSetAutoResetDelaySeconds = onSetAutoResetDelaySeconds,
+                                    )
+                                }
+                            }
                             item {
-                                HostConnectedDeviceCards(
-                                    cards = uiState.connectedDeviceMonitoringCards,
+                                LobbyPeersCard(
+                                    devices = uiState.devices,
+                                    hasConnectedPeers = uiState.hasConnectedPeers,
+                                    connectionTypeLabel = uiState.monitoringConnectionTypeLabel,
+                                    syncModeLabel = uiState.monitoringSyncModeLabel,
+                                    latencyMs = uiState.monitoringLatencyMs,
+                                )
+                            }
+                            item {
+                                val hideLocalDeviceInAssignments = uiState.isControllerOnlyHost ||
+                                    (BuildConfig.HOST_CONTROLLER_ONLY && uiState.networkRole == SessionNetworkRole.HOST)
+                                DeviceAssignmentsCard(
+                                    devices = if (hideLocalDeviceInAssignments) {
+                                        uiState.devices.filterNot { it.isLocal || it.id == localDevice?.id }
+                                    } else {
+                                        uiState.devices
+                                    },
+                                    editable = uiState.networkRole == SessionNetworkRole.HOST,
                                     showDebugInfo = showDebugInfo,
-                                    onRequestRemoteResync = onRequestRemoteResync,
-                                    onUpdateRemoteSensitivity = onUpdateRemoteSensitivity,
+                                    onAssignRole = onAssignRole,
+                                    onAssignCameraFacing = onAssignCameraFacing,
                                 )
                             }
                         }
-                        if (showDebugInfo && !effectiveControllerOnlyHost) {
-                            item {
-                                AdvancedDetectionCard(
-                                    uiState = uiState,
-                                    showDebugInfo = showDebugInfo,
-                                    onUpdateThreshold = onUpdateThreshold,
-                                    onUpdateRoiCenter = onUpdateRoiCenter,
-                                    onUpdateRoiWidth = onUpdateRoiWidth,
-                                    onUpdateCooldown = onUpdateCooldown,
-                                )
+
+                        SessionStage.MONITORING -> {
+                            if (uiState.operatingMode == SessionOperatingMode.DISPLAY_HOST) {
+                                item {
+                                    DisplayResultsCard(
+                                        rows = uiState.displayLapRows,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillParentMaxHeight(),
+                                    )
+                                }
+                            } else {
+                                item {
+                                    RunMetricsCard(
+                                        uiState = uiState,
+                                        isHost = uiState.isHost,
+                                        showDebugInfo = showDebugInfo,
+                                        onResetRun = onResetRun,
+                                        onOpenSaveResultDialog = onOpenSaveResultDialog,
+                                        onOpenRunDetailsOverlay = onOpenRunDetailsOverlay,
+                                    )
+                                }
+                                if (uiState.clockLockWarningText != null) {
+                                    item {
+                                        ClockWarningCard(uiState.clockLockWarningText)
+                                    }
+                                }
+                                if (!effectiveControllerOnlyHost) {
+                                    item {
+                                        MonitoringSummaryCard(
+                                            isHost = uiState.isHost,
+                                            controllerOnlyHost = effectiveControllerOnlyHost,
+                                            localRole = uiState.localRole,
+                                            localCameraFacing = localDevice?.cameraFacing ?: SessionCameraFacing.FRONT,
+                                            showDebugInfo = showDebugInfo,
+                                            connectionTypeLabel = uiState.monitoringConnectionTypeLabel,
+                                            syncModeLabel = uiState.monitoringSyncModeLabel,
+                                            latencyMs = uiState.monitoringLatencyMs,
+                                            localAnalysisResolutionLabel = if (uiState.localAnalysisWidth != null && uiState.localAnalysisHeight != null) {
+                                                "${uiState.localAnalysisWidth}x${uiState.localAnalysisHeight}"
+                                            } else {
+                                                "-"
+                                            },
+                                            userMonitoringEnabled = uiState.userMonitoringEnabled,
+                                            onSetMonitoringEnabled = onSetMonitoringEnabled,
+                                            onAssignLocalCameraFacing = { facing ->
+                                                localDevice?.let { device ->
+                                                    onAssignCameraFacing(device.id, facing)
+                                                }
+                                            },
+                                            effectiveShowPreview = effectiveShowPreview,
+                                            onShowPreviewChanged = { showPreview = it },
+                                            sensitivity = thresholdToSensitivity(uiState.threshold),
+                                            onUpdateSensitivity = { nextSensitivity ->
+                                                onUpdateThreshold(sensitivityToThreshold(nextSensitivity.toInt()))
+                                            },
+                                            previewViewFactory = previewViewFactory,
+                                            roiCenterX = uiState.roiCenterX,
+                                            roiWidth = uiState.roiWidth,
+                                            operatingMode = uiState.operatingMode,
+                                            discoveredDisplayHosts = uiState.discoveredEndpoints,
+                                            displayConnectedHostName = uiState.displayConnectedHostName,
+                                            displayDiscoveryActive = uiState.displayDiscoveryActive,
+                                            anchorDeviceName = uiState.anchorDeviceName,
+                                            anchorState = uiState.anchorState,
+                                            clockLockReasonLabel = uiState.clockLockReasonLabel,
+                                            onStartDisplayDiscovery = onStartDisplayDiscovery,
+                                            onConnectDisplayHost = onConnectDisplayHost,
+                                            onResetRun = onResetRun,
+                                        )
+                                    }
+                                }
+                                if (
+                                    shouldShowHostConnectedDeviceCards(
+                                        stage = uiState.stage,
+                                        operatingMode = uiState.operatingMode,
+                                        isHost = uiState.isHost,
+                                        deviceProfile = BuildConfig.DEVICE_PROFILE,
+                                    ) && uiState.connectedDeviceMonitoringCards.isNotEmpty()
+                                ) {
+                                    item {
+                                        HostConnectedDeviceCards(
+                                            cards = uiState.connectedDeviceMonitoringCards,
+                                            showDebugInfo = showDebugInfo,
+                                            onRequestRemoteResync = onRequestRemoteResync,
+                                            onUpdateRemoteSensitivity = onUpdateRemoteSensitivity,
+                                        )
+                                    }
+                                }
+                                if (showDebugInfo && !effectiveControllerOnlyHost) {
+                                    item {
+                                        AdvancedDetectionCard(
+                                            uiState = uiState,
+                                            showDebugInfo = showDebugInfo,
+                                            onUpdateThreshold = onUpdateThreshold,
+                                            onUpdateRoiCenter = onUpdateRoiCenter,
+                                            onUpdateRoiWidth = onUpdateRoiWidth,
+                                            onUpdateCooldown = onUpdateCooldown,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            if (showDebugInfo && uiState.connectedEndpoints.isNotEmpty()) {
-                item {
-                    ConnectedCard(uiState.connectedEndpoints)
-                }
-            }
+                    if (showDebugInfo && uiState.connectedEndpoints.isNotEmpty()) {
+                        item {
+                            ConnectedCard(uiState.connectedEndpoints)
+                        }
+                    }
 
-            if (showDebugInfo && uiState.recentEvents.isNotEmpty()) {
-                item {
-                    EventsCard(uiState.recentEvents)
-                }
-            }
+                    if (showDebugInfo && uiState.recentEvents.isNotEmpty()) {
+                        item {
+                            EventsCard(uiState.recentEvents)
+                        }
+                    }
                 }
             }
 
@@ -951,7 +955,13 @@ private fun DeviceAssignmentRow(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = if (device.isLocal) "${mapDeviceNameForUi(device.name)} (Local)" else mapDeviceNameForUi(device.name),
+                text = if (device.isLocal) {
+                    "${mapDeviceNameForUi(
+                        device.name,
+                    )} (Local)"
+                } else {
+                    mapDeviceNameForUi(device.name)
+                },
                 fontWeight = FontWeight.Medium,
             )
             if (showDebugInfo) {
@@ -1056,7 +1066,7 @@ private fun MonitoringSummaryCard(
     }
 
     SprintSyncCard {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        Box(modifier = Modifier.fillMaxWidth()) {
             if (controllerOnlyHost && operatingMode != SessionOperatingMode.SINGLE_DEVICE) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
@@ -1479,11 +1489,7 @@ private fun ClockWarningCard(text: String) {
 }
 
 @Composable
-private fun PreviewSurface(
-    previewViewFactory: SensorNativePreviewViewFactory,
-    roiCenterX: Double,
-    roiWidth: Double,
-) {
+private fun PreviewSurface(previewViewFactory: SensorNativePreviewViewFactory, roiCenterX: Double, roiWidth: Double) {
     Box(
         modifier = Modifier
             .width(180.dp)
@@ -1880,7 +1886,9 @@ private fun RunDetailsOverlay(
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     Text(
-                                        text = "${distanceMetersLabel(result.distanceMeters)} • ${sessionDeviceRoleLabel(result.role)}",
+                                        text = "${distanceMetersLabel(
+                                            result.distanceMeters,
+                                        )} • ${sessionDeviceRoleLabel(result.role)}",
                                         style = MaterialTheme.typography.titleMedium,
                                     )
                                     MetricDisplay("Total Time", "${formatSeconds(result.totalTimeSec)} s")
@@ -2038,10 +2046,7 @@ private fun SavedResultsDialog(
 }
 
 @Composable
-private fun SavedRunResultDetailsDialog(
-    result: SavedRunResult,
-    onDismiss: () -> Unit,
-) {
+private fun SavedRunResultDetailsDialog(result: SavedRunResult, onDismiss: () -> Unit) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -2206,7 +2211,15 @@ private fun ConnectedDevicesListCard(devices: List<SessionDevice>, showDebugInfo
             devices
                 .sortedBy { mapDeviceNameForUi(it.name).lowercase() }
                 .forEach { device ->
-                    Text(if (device.isLocal) "${mapDeviceNameForUi(device.name)} (Local)" else mapDeviceNameForUi(device.name))
+                    Text(
+                        if (device.isLocal) {
+                            "${mapDeviceNameForUi(
+                                device.name,
+                            )} (Local)"
+                        } else {
+                            mapDeviceNameForUi(device.name)
+                        },
+                    )
                     if (showDebugInfo) {
                         Text(device.id, style = MaterialTheme.typography.bodySmall)
                     }
@@ -2235,17 +2248,17 @@ private fun AppVersionCard() {
             .fillMaxWidth()
             .padding(top = 8.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
             text = "App Version",
             style = MaterialTheme.typography.labelMedium,
-            color = Color.Gray
+            color = Color.Gray,
         )
         Text(
             text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -2436,10 +2449,8 @@ internal fun shouldUseTabletMinimalMonitoringUi(
         isHost
 }
 
-internal fun shouldShowMonitoringSensitivityControl(
-    controllerOnlyHost: Boolean,
-    mode: SessionOperatingMode,
-): Boolean = !controllerOnlyHost && mode != SessionOperatingMode.DISPLAY_HOST
+internal fun shouldShowMonitoringSensitivityControl(controllerOnlyHost: Boolean, mode: SessionOperatingMode): Boolean =
+    !controllerOnlyHost && mode != SessionOperatingMode.DISPLAY_HOST
 
 private const val SENSITIVITY_MIN = 1
 private const val SENSITIVITY_MAX = 100

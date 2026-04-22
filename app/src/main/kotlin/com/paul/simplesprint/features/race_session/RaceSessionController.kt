@@ -5,19 +5,18 @@ import androidx.lifecycle.viewModelScope
 import com.paul.simplesprint.BuildConfig
 import com.paul.simplesprint.core.clock.ClockDomain
 import com.paul.simplesprint.core.models.LastRunResult
-import com.paul.simplesprint.core.repositories.LocalRepository
 import com.paul.simplesprint.core.services.SessionConnectionEvent
+import java.nio.charset.StandardCharsets
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.nio.charset.StandardCharsets
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 typealias RaceSessionLoadLastRun = suspend () -> LastRunResult?
 typealias RaceSessionSaveLastRun = suspend (LastRunResult) -> Unit
@@ -282,7 +281,10 @@ class RaceSessionController(
             sensitivity = sensitivity.coerceIn(1, 100),
         )
         if (enableBinaryTelemetry) {
-            sendTelemetryPayload(endpointId, TelemetryEnvelopeFlatBufferCodec.encodeDeviceConfigUpdate(message)) { result ->
+            sendTelemetryPayload(
+                endpointId,
+                TelemetryEnvelopeFlatBufferCodec.encodeDeviceConfigUpdate(message),
+            ) { result ->
                 result.exceptionOrNull()?.let { error ->
                     _uiState.value = _uiState.value.copy(
                         lastError = "remote sensitivity send failed: ${error.localizedMessage ?: "unknown"}",
@@ -310,7 +312,10 @@ class RaceSessionController(
         return true
     }
 
-    fun requestRemoteClockResync(targetEndpointId: String, sampleCount: Int = DEFAULT_CLOCK_SYNC_SAMPLE_COUNT): Boolean {
+    fun requestRemoteClockResync(
+        targetEndpointId: String,
+        sampleCount: Int = DEFAULT_CLOCK_SYNC_SAMPLE_COUNT,
+    ): Boolean {
         if (_uiState.value.networkRole != SessionNetworkRole.HOST) {
             return false
         }
@@ -322,7 +327,10 @@ class RaceSessionController(
             sampleCount = sampleCount.coerceIn(3, 24),
         )
         if (enableBinaryTelemetry) {
-            sendTelemetryPayload(targetEndpointId, TelemetryEnvelopeFlatBufferCodec.encodeClockResyncRequest(message)) { result ->
+            sendTelemetryPayload(
+                targetEndpointId,
+                TelemetryEnvelopeFlatBufferCodec.encodeClockResyncRequest(message),
+            ) { result ->
                 result.exceptionOrNull()?.let { error ->
                     _uiState.value = _uiState.value.copy(
                         lastError = "resync request failed: ${error.localizedMessage ?: "unknown"}",
@@ -843,11 +851,7 @@ class RaceSessionController(
         startClockSyncBurstInternal(endpointId, sampleCount, ClockSyncBurstReason.MANUAL)
     }
 
-    private fun startClockSyncBurstInternal(
-        endpointId: String,
-        sampleCount: Int,
-        reason: ClockSyncBurstReason,
-    ) {
+    private fun startClockSyncBurstInternal(endpointId: String, sampleCount: Int, reason: ClockSyncBurstReason) {
         if (!_uiState.value.connectedEndpoints.contains(endpointId)) {
             _uiState.value = _uiState.value.copy(lastError = "Clock sync ignored: endpoint not connected")
             return
@@ -1523,7 +1527,11 @@ class RaceSessionController(
             if (_uiState.value.networkRole == SessionNetworkRole.CLIENT) {
                 switchClockSyncEndpoint(event.endpointId)
                 if (!_uiState.value.clockSyncInProgress) {
-                    startClockSyncBurstInternal(event.endpointId, DEFAULT_CLOCK_SYNC_SAMPLE_COUNT, ClockSyncBurstReason.STALE)
+                    startClockSyncBurstInternal(
+                        event.endpointId,
+                        DEFAULT_CLOCK_SYNC_SAMPLE_COUNT,
+                        ClockSyncBurstReason.STALE,
+                    )
                 }
                 publishDeviceTelemetryIfClient(force = true)
             }
@@ -2120,7 +2128,10 @@ class RaceSessionController(
             return
         }
         if (enableBinaryTelemetry) {
-            sendTelemetryPayload(hostEndpointId, TelemetryEnvelopeFlatBufferCodec.encodeDeviceTelemetry(message)) { result ->
+            sendTelemetryPayload(
+                hostEndpointId,
+                TelemetryEnvelopeFlatBufferCodec.encodeDeviceTelemetry(message),
+            ) { result ->
                 result.exceptionOrNull()?.let { error ->
                     _uiState.value = _uiState.value.copy(
                         lastError = "telemetry send failed: ${error.localizedMessage ?: "unknown"}",

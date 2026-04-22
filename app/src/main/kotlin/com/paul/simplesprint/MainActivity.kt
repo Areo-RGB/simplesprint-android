@@ -6,10 +6,10 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
-import android.os.Bundle
 import android.os.Build
-import android.provider.Settings
+import android.os.Bundle
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -22,8 +22,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
-import com.paul.simplesprint.core.models.SavedRunResult
 import com.paul.simplesprint.core.models.SavedRunCheckpointResult
+import com.paul.simplesprint.core.models.SavedRunResult
 import com.paul.simplesprint.core.repositories.LocalRepository
 import com.paul.simplesprint.core.services.AppUpdateChecker
 import com.paul.simplesprint.core.services.NsdServiceCoordinator
@@ -35,32 +35,32 @@ import com.paul.simplesprint.features.motion_detection.MotionCameraFacing
 import com.paul.simplesprint.features.motion_detection.MotionDetectionController
 import com.paul.simplesprint.features.race_session.RaceSessionController
 import com.paul.simplesprint.features.race_session.RaceSessionUiState
+import com.paul.simplesprint.features.race_session.SessionAnchorState
 import com.paul.simplesprint.features.race_session.SessionCameraFacing
 import com.paul.simplesprint.features.race_session.SessionClockLockReason
 import com.paul.simplesprint.features.race_session.SessionDeviceRole
 import com.paul.simplesprint.features.race_session.SessionLapResultMessage
 import com.paul.simplesprint.features.race_session.SessionNetworkRole
 import com.paul.simplesprint.features.race_session.SessionOperatingMode
-import com.paul.simplesprint.features.race_session.SessionAnchorState
 import com.paul.simplesprint.features.race_session.SessionSplitMark
 import com.paul.simplesprint.features.race_session.SessionStage
 import com.paul.simplesprint.features.race_session.TelemetryEnvelopeFlatBufferCodec
 import com.paul.simplesprint.features.race_session.explicitSplitRoles
 import com.paul.simplesprint.features.race_session.isSplitCheckpointRole
-import com.paul.simplesprint.features.race_session.splitIndexForRole
 import com.paul.simplesprint.features.race_session.sessionDeviceRoleLabel
+import com.paul.simplesprint.features.race_session.splitIndexForRole
 import com.paul.simplesprint.sensor_native.SensorNativeController
 import com.paul.simplesprint.sensor_native.SensorNativeEvent
 import com.paul.simplesprint.sensor_native.SensorNativePreviewViewFactory
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsResultCallback {
     companion object {
@@ -99,8 +99,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     private var localCaptureRetryBlockedUntilMs: Long = 0L
     private var debugEnabled: Boolean = false
     private var userMonitoringEnabled: Boolean = true
+
     @Volatile
     private var autoResetEnabled: Boolean = false
+
     @Volatile
     private var autoResetDelaySeconds: Int = 3
     private var tabletTimerScalePercent: Int = 36
@@ -381,7 +383,9 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     onStartDisplayDiscovery = {
                         requestPermissionsIfNeeded(PermissionScope.NETWORK_ONLY) {
                             if (!isWifiTransportActive()) {
-                                appendEvent("Connect this display device to the same Wi-Fi network as the tablet, then retry.")
+                                appendEvent(
+                                    "Connect this display device to the same Wi-Fi network as the tablet, then retry.",
+                                )
                                 syncControllerSummaries()
                                 return@requestPermissionsIfNeeded
                             }
@@ -805,7 +809,9 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     },
                     onConfirmRunDetailsSave = {
                         val durationNanos = uiState.value.saveableRunDurationNanos ?: return@SprintSyncApp
-                        val (athleteName, errorMessage) = normalizeAthleteNameForResult(raw = uiState.value.runDetailsAthleteNameDraft)
+                        val (athleteName, errorMessage) = normalizeAthleteNameForResult(
+                            raw = uiState.value.runDetailsAthleteNameDraft,
+                        )
                         if (errorMessage != null) {
                             updateUiState { copy(runDetailsSaveError = errorMessage) }
                             return@SprintSyncApp
@@ -843,8 +849,6 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     },
                 )
             }
-
-
         }
         onBackPressedDispatcher.addCallback(
             this,
@@ -2187,7 +2191,9 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         localCaptureWatchdogRestartRunId = runId
         localCaptureStartPending = false
         localCaptureRetryBlockedUntilMs = 0L
-        logRuntimeDiagnostic("watchdog restart local capture: staleFrameStatsMs=$staleForMs role=${role.name} runId=$runId")
+        logRuntimeDiagnostic(
+            "watchdog restart local capture: staleFrameStatsMs=$staleForMs role=${role.name} runId=$runId",
+        )
         appendEvent("watchdog: restart local capture ($staleForMs ms stale)")
         motionDetectionController.stopMonitoring()
         applyLocalMonitoringConfigFromSession()
@@ -2322,10 +2328,7 @@ internal fun shouldHoldMonitoringWifiLock(
         monitoringActive
 }
 
-internal fun selectMonitoringWifiLockMode(
-    apiLevel: Int,
-    lowLatencyMinApi: Int = 29,
-): MonitoringWifiLockMode {
+internal fun selectMonitoringWifiLockMode(apiLevel: Int, lowLatencyMinApi: Int = 29): MonitoringWifiLockMode {
     return if (apiLevel >= lowLatencyMinApi) {
         MonitoringWifiLockMode.LOW_LATENCY
     } else {
@@ -2356,16 +2359,10 @@ internal fun shouldHandleSystemBackToLobby(
         stage == SessionStage.MONITORING
 }
 
-internal fun shouldForceTabletHostMode(
-    tabletAlwaysHostFlag: Boolean,
-    isTabletRoleChoiceDevice: Boolean,
-): Boolean = tabletAlwaysHostFlag && isTabletRoleChoiceDevice
+internal fun shouldForceTabletHostMode(tabletAlwaysHostFlag: Boolean, isTabletRoleChoiceDevice: Boolean): Boolean =
+    tabletAlwaysHostFlag && isTabletRoleChoiceDevice
 
-internal fun isTabletRoleChoiceDeviceModel(
-    model: String,
-    device: String,
-    manufacturer: String,
-): Boolean {
+internal fun isTabletRoleChoiceDeviceModel(model: String, device: String, manufacturer: String): Boolean {
     val normalizedModel = model.trim()
     val normalizedDevice = device.trim()
     val normalizedManufacturer = manufacturer.trim()
@@ -2550,10 +2547,7 @@ internal fun connectionFailureGuidanceMessage(
     return "Connection failed. Confirm same Wi-Fi and host server at 192.168.0.103:9000."
 }
 
-internal fun deriveSaveableRunDurationNanos(
-    startedSensorNanos: Long?,
-    stoppedSensorNanos: Long?,
-): Long? {
+internal fun deriveSaveableRunDurationNanos(startedSensorNanos: Long?, stoppedSensorNanos: Long?): Long? {
     val started = startedSensorNanos ?: return null
     val stopped = stoppedSensorNanos ?: return null
     val duration = stopped - started
@@ -2590,7 +2584,7 @@ internal fun buildAthleteDateResultName(
     locale: Locale = Locale.getDefault(),
 ): String {
     val formattedDate = SimpleDateFormat("dd_MM_yyyy", locale).format(now)
-    return "${athleteName}_${formattedDate}"
+    return "${athleteName}_$formattedDate"
 }
 
 internal fun sortSavedRunResults(results: List<SavedRunResult>): List<SavedRunResult> {
@@ -2613,10 +2607,7 @@ internal fun formatElapsedTimerDisplay(totalMillis: Long): String {
     }
 }
 
-internal fun autoResetRunSignature(
-    startedSensorNanos: Long?,
-    stoppedSensorNanos: Long?,
-): String? {
+internal fun autoResetRunSignature(startedSensorNanos: Long?, stoppedSensorNanos: Long?): String? {
     if (startedSensorNanos == null || stoppedSensorNanos == null) {
         return null
     }
@@ -2662,10 +2653,7 @@ internal fun shouldCancelPendingAutoResetForSettingsChange(
     return previousEnabled != nextEnabled || previousDelaySeconds != nextDelaySeconds
 }
 
-internal fun requestedOrientationForMode(
-    mode: SessionOperatingMode,
-    isTabletHostDevice: Boolean = false,
-): Int {
+internal fun requestedOrientationForMode(mode: SessionOperatingMode, isTabletHostDevice: Boolean = false): Int {
     if (shouldUseLandscapeForMode(mode)) {
         return ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
@@ -2674,4 +2662,3 @@ internal fun requestedOrientationForMode(
     }
     return ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 }
-

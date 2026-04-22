@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/main/kotlin/com/paul/simplesprint/MainActivity.kt">
+        <error line="369" column="1" source="standard:max-line-length" />
+        <error line="377" column="1" source="standard:max-line-length" />
+        <error line="783" column="1" source="standard:max-line-length" />
+        <error line="1373" column="1" source="standard:max-line-length" />
+        <error line="1472" column="1" source="standard:max-line-length" />
+        <error line="1482" column="1" source="standard:max-line-length" />
+        <error line="1497" column="1" source="standard:max-line-length" />
+        <error line="1501" column="1" source="standard:max-line-length" />
+        <error line="1671" column="1" source="standard:max-line-length" />
+        <error line="1780" column="1" source="standard:max-line-length" />
+        <error line="1822" column="1" source="standard:max-line-length" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/SprintSyncApp.kt">
+        <error line="187" column="5" source="standard:function-naming" />
+        <error line="385" column="1" source="standard:max-line-length" />
+        <error line="470" column="1" source="standard:max-line-length" />
+        <error line="634" column="13" source="standard:function-naming" />
+        <error line="709" column="13" source="standard:function-naming" />
+        <error line="732" column="13" source="standard:function-naming" />
+        <error line="750" column="13" source="standard:function-naming" />
+        <error line="777" column="13" source="standard:function-naming" />
+        <error line="841" column="13" source="standard:function-naming" />
+        <error line="867" column="13" source="standard:function-naming" />
+        <error line="908" column="13" source="standard:function-naming" />
+        <error line="941" column="13" source="standard:function-naming" />
+        <error line="1031" column="13" source="standard:function-naming" />
+        <error line="1267" column="13" source="standard:function-naming" />
+        <error line="1310" column="1" source="standard:max-line-length" />
+        <error line="1346" column="13" source="standard:function-naming" />
+        <error line="1478" column="13" source="standard:function-naming" />
+        <error line="1492" column="13" source="standard:function-naming" />
+        <error line="1531" column="13" source="standard:function-naming" />
+        <error line="1584" column="13" source="standard:function-naming" />
+        <error line="1660" column="13" source="standard:function-naming" />
+        <error line="1769" column="13" source="standard:function-naming" />
+        <error line="1909" column="13" source="standard:function-naming" />
+        <error line="1950" column="13" source="standard:function-naming" />
+        <error line="1987" column="13" source="standard:function-naming" />
+        <error line="2049" column="13" source="standard:function-naming" />
+        <error line="2091" column="13" source="standard:function-naming" />
+        <error line="2112" column="13" source="standard:function-naming" />
+        <error line="2195" column="13" source="standard:function-naming" />
+        <error line="2207" column="13" source="standard:function-naming" />
+        <error line="2232" column="13" source="standard:function-naming" />
+        <error line="2245" column="13" source="standard:function-naming" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/core/services/SessionConnectionEvents.kt">
+        <error line="1" column="1" source="standard:filename" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/core/services/TcpConnectionsManager.kt">
+        <error line="90" column="1" source="standard:max-line-length" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/features/motion_detection/MotionDetectionController.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/features/motion_detection/MotionDetectionModels.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/features/race_session/RaceSessionController.kt">
+        <error line="1" column="9" source="standard:package-name" />
+        <error line="1517" column="1" source="standard:max-line-length" />
+        <error line="1544" column="1" source="standard:max-line-length" />
+        <error line="1799" column="1" source="standard:max-line-length" />
+        <error line="1995" column="1" source="standard:max-line-length" />
+        <error line="2013" column="1" source="standard:max-line-length" />
+        <error line="2126" column="1" source="standard:max-line-length" />
+        <error line="2260" column="1" source="standard:max-line-length" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/features/race_session/RaceSessionModels.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/features/race_session/SessionClockSyncBinaryCodec.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/features/race_session/TelemetryEnvelopeFlatBufferCodec.kt">
+        <error line="1" column="9" source="standard:package-name" />
+        <error line="315" column="1" source="standard:max-line-length" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/sensor_native/SensorNativeCameraSession.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/sensor_native/SensorNativeController.kt">
+        <error line="1" column="9" source="standard:package-name" />
+        <error line="491" column="1" source="standard:max-line-length" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/sensor_native/SensorNativeEvents.kt">
+        <error line="1" column="1" source="standard:filename" />
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/sensor_native/SensorNativeMath.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/sensor_native/SensorNativeModels.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/sensor_native/SensorNativePreviewPlatformView.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/sensor_native/SensorNativePreviewViewFactory.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/ui/components/Buttons.kt">
+        <error line="16" column="5" source="standard:function-naming" />
+        <error line="41" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/ui/components/Headers.kt">
+        <error line="16" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/ui/components/MetricDisplay.kt">
+        <error line="15" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/ui/components/SprintSyncCard.kt">
+        <error line="22" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/kotlin/com/paul/simplesprint/ui/theme/Theme.kt">
+        <error line="37" column="5" source="standard:function-naming" />
+        <error line="39" column="36" source="standard:discouraged-comment-location" />
+    </file>
+    <file name="src/test/kotlin/com/paul/simplesprint/features/race_session/RaceSessionControllerTest.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/test/kotlin/com/paul/simplesprint/features/race_session/RaceSessionModelsTest.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/test/kotlin/com/paul/simplesprint/features/race_session/TelemetryEnvelopeFlatBufferCodecTest.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/test/kotlin/com/paul/simplesprint/sensor_native/SensorNativeControllerPreviewTimingTest.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+    <file name="src/test/kotlin/com/paul/simplesprint/sensor_native/SensorNativeMathTest.kt">
+        <error line="1" column="9" source="standard:package-name" />
+    </file>
+</baseline>

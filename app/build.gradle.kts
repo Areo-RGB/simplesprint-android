@@ -38,7 +38,11 @@ android {
         buildConfigField("String", "DEVICE_PROFILE", "\"default\"")
         buildConfigField("boolean", "HOST_CONTROLLER_ONLY", "false")
         buildConfigField("boolean", "TABLET_ALWAYS_HOST", tabletAlwaysHostApk.toString())
-        buildConfigField("String", "UPDATE_CHECK_URL", "\"https://api.github.com/repos/Areo-RGB/SprintApp/releases/latest\"")
+        buildConfigField(
+            "String",
+            "UPDATE_CHECK_URL",
+            "\"https://api.github.com/repos/Areo-RGB/SprintApp/releases/latest\"",
+        )
         resValue("string", "app_name", "SimpleSprint")
     }
 
@@ -64,7 +68,6 @@ android {
             isIncludeAndroidResources = true
         }
     }
-
 }
 
 dependencies {

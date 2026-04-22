@@ -126,7 +126,11 @@ class TcpConnectionsManager(
         }
     }
 
-    override fun startDiscovery(serviceId: String, strategy: SessionConnectionStrategy, onComplete: (Result<Unit>) -> Unit) {
+    override fun startDiscovery(
+        serviceId: String,
+        strategy: SessionConnectionStrategy,
+        onComplete: (Result<Unit>) -> Unit,
+    ) {
         connectedSockets.clear()
         endpointNamesById.clear()
         activeRole = SessionConnectionRole.CLIENT
