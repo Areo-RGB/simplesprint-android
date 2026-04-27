@@ -18,12 +18,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -36,6 +44,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,8 +70,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.paul.simplesprint.core.models.SavedRunCheckpointResult
 import com.paul.simplesprint.core.models.SavedRunResult
+import com.paul.simplesprint.features.display_results.ui.DisplayLapRow
+import com.paul.simplesprint.features.display_results.ui.DisplayResultsCard
+import com.paul.simplesprint.features.monitoring.ui.ClockWarningCard
+import com.paul.simplesprint.features.monitoring.ui.ConnectedDeviceMonitoringCardUiState
+import com.paul.simplesprint.features.monitoring.ui.HostConnectedDeviceCards
+import com.paul.simplesprint.features.monitoring.ui.MonitoringSummaryCard
+import com.paul.simplesprint.features.monitoring.ui.sensitivityToThreshold
+import com.paul.simplesprint.features.monitoring.ui.shouldShowCameraFpsInfo
+import com.paul.simplesprint.features.monitoring.ui.thresholdToSensitivity
 import com.paul.simplesprint.features.race_session.SessionAnchorState
 import com.paul.simplesprint.features.race_session.SessionCameraFacing
 import com.paul.simplesprint.features.race_session.SessionDevice
@@ -68,12 +87,15 @@ import com.paul.simplesprint.features.race_session.SessionDeviceRole
 import com.paul.simplesprint.features.race_session.SessionNetworkRole
 import com.paul.simplesprint.features.race_session.SessionOperatingMode
 import com.paul.simplesprint.features.race_session.SessionStage
+import com.paul.simplesprint.features.saved_results.ui.SaveResultDialog
+import com.paul.simplesprint.features.saved_results.ui.SaveRunDetailsDialog
+import com.paul.simplesprint.features.saved_results.ui.SavedResultsDialog
+import com.paul.simplesprint.features.saved_results.ui.SavedRunResultDetailsDialog
 import com.paul.simplesprint.features.race_session.sessionCameraFacingLabel
 import com.paul.simplesprint.features.race_session.sessionDeviceRoleLabel
 import com.paul.simplesprint.sensor_native.SensorNativePreviewViewFactory
 import com.paul.simplesprint.ui.components.*
 import com.paul.simplesprint.ui.theme.*
-import com.paul.simplesprint.ui.theme.InterExtraBoldTabularTypography
 import kotlin.math.roundToInt
 
 data class SprintSyncUiState(
@@ -109,6 +131,10 @@ data class SprintSyncUiState(
     val runMarksCount: Int = 0,
     val elapsedDisplay: String = "00.00",
     val tabletTimerScalePercent: Int = 36,
+    val timerLimitMs: Int = 6_000,
+    val showTimerLimitOverlay: Boolean = false,
+    val timerLimitDraft: String = "6000",
+    val timerLimitError: String? = null,
     val threshold: Double = 0.006,
     val roiCenterX: Double = 0.5,
     val roiWidth: Double = 0.03,
@@ -156,24 +182,6 @@ data class SprintSyncUiState(
     val updateDownloading: Boolean = false,
 )
 
-data class DisplayLapRow(
-    val deviceName: String,
-    val lapTimeLabel: String,
-)
-
-data class ConnectedDeviceMonitoringCardUiState(
-    val stableDeviceId: String?,
-    val endpointId: String,
-    val deviceName: String,
-    val role: SessionDeviceRole,
-    val latencyMs: Int?,
-    val clockSynced: Boolean,
-    val analysisWidth: Int?,
-    val analysisHeight: Int?,
-    val sensitivity: Int,
-    val connected: Boolean,
-)
-
 data class RunDetailsCheckpointResult(
     val role: SessionDeviceRole,
     val distanceMeters: Double,
@@ -203,8 +211,13 @@ fun SprintSyncApp(
     onSetAutoResetDelaySeconds: (Int) -> Unit,
     onStopMonitoring: () -> Unit,
     onResetRun: () -> Unit,
+    onUpdateTimerLimit: (Int) -> Unit,
     onDecreaseTabletTimerSize: () -> Unit,
     onIncreaseTabletTimerSize: () -> Unit,
+    onOpenTimerLimitOverlay: () -> Unit,
+    onDismissTimerLimitOverlay: () -> Unit,
+    onTimerLimitDraftChanged: (String) -> Unit,
+    onSaveTimerLimit: () -> Unit,
     onAssignRole: (String, SessionDeviceRole) -> Unit,
     onAssignCameraFacing: (String, SessionCameraFacing) -> Unit,
     onUpdateThreshold: (Double) -> Unit,
@@ -269,6 +282,7 @@ fun SprintSyncApp(
                     onResetRun = onResetRun,
                     onDecreaseTimerSize = onDecreaseTabletTimerSize,
                     onIncreaseTimerSize = onIncreaseTabletTimerSize,
+                    onOpenTimerLimitOverlay = onOpenTimerLimitOverlay,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -388,6 +402,19 @@ fun SprintSyncApp(
                                 )
                             }
                             if (
+                                shouldShowControllerLobbyControls(
+                                    stage = uiState.stage,
+                                    operatingMode = uiState.operatingMode,
+                                    localRole = uiState.localRole,
+                                )
+                            ) {
+                                item {
+                                    ControllerLobbyControlsCard(
+                                        onStartMonitoring = onStartMonitoring,
+                                    )
+                                }
+                            }
+                            if (
                                 shouldShowLobbyAutoResetSettingsCard(
                                     tabletAlwaysHost = tabletAlwaysHost,
                                     stage = uiState.stage,
@@ -416,12 +443,13 @@ fun SprintSyncApp(
                             item {
                                 val hideLocalDeviceInAssignments = uiState.isControllerOnlyHost ||
                                     (BuildConfig.HOST_CONTROLLER_ONLY && uiState.networkRole == SessionNetworkRole.HOST)
+                                val assignmentDevices = if (hideLocalDeviceInAssignments) {
+                                    uiState.devices.filterNot { it.isLocal || it.id == localDevice?.id }
+                                } else {
+                                    uiState.devices
+                                }.filterNot(::shouldHideDeviceFromConnectorAssignments)
                                 DeviceAssignmentsCard(
-                                    devices = if (hideLocalDeviceInAssignments) {
-                                        uiState.devices.filterNot { it.isLocal || it.id == localDevice?.id }
-                                    } else {
-                                        uiState.devices
-                                    },
+                                    devices = assignmentDevices,
                                     editable = uiState.networkRole == SessionNetworkRole.HOST,
                                     showDebugInfo = showDebugInfo,
                                     onAssignRole = onAssignRole,
@@ -450,6 +478,23 @@ fun SprintSyncApp(
                                         onOpenSaveResultDialog = onOpenSaveResultDialog,
                                         onOpenRunDetailsOverlay = onOpenRunDetailsOverlay,
                                     )
+                                }
+                                if (
+                                    shouldShowControllerMonitoringControls(
+                                        stage = uiState.stage,
+                                        operatingMode = uiState.operatingMode,
+                                        localRole = uiState.localRole,
+                                    )
+                                ) {
+                                    item {
+                                        ControllerMonitoringControlsCard(
+                                            timerLimitMs = uiState.timerLimitMs,
+                                            onStopMonitoring = onStopMonitoring,
+                                            onResetRun = onResetRun,
+                                            onOpenTimerLimitOverlay = onOpenTimerLimitOverlay,
+                                            onUpdateTimerLimit = onUpdateTimerLimit,
+                                        )
+                                    }
                                 }
                                 if (uiState.clockLockWarningText != null) {
                                     item {
@@ -607,6 +652,17 @@ fun SprintSyncApp(
                 )
             }
 
+            if (uiState.showTimerLimitOverlay) {
+                TimerLimitOverlay(
+                    value = uiState.timerLimitDraft,
+                    error = uiState.timerLimitError,
+                    currentLimitMs = uiState.timerLimitMs,
+                    onValueChange = onTimerLimitDraftChanged,
+                    onDismiss = onDismissTimerLimitOverlay,
+                    onConfirm = onSaveTimerLimit,
+                )
+            }
+
             if (isDisplayHostMode) {
                 OutlinedButton(
                     onClick = onStopMonitoring,
@@ -639,6 +695,7 @@ private fun TabletMinimalMonitoringScreen(
     onResetRun: () -> Unit,
     onDecreaseTimerSize: () -> Unit,
     onIncreaseTimerSize: () -> Unit,
+    onOpenTimerLimitOverlay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tabletTimerColor = Color(0xFFFFE44D)
@@ -700,9 +757,63 @@ private fun TabletMinimalMonitoringScreen(
                 ) {
                     Text("+", color = tabletTimerColor)
                 }
+                OutlinedButton(
+                    onClick = onOpenTimerLimitOverlay,
+                    border = BorderStroke(1.dp, tabletTimerColor.copy(alpha = 0.7f)),
+                ) {
+                    Text("Limit", color = tabletTimerColor)
+                }
             }
         }
     }
+}
+
+@Composable
+private fun TimerLimitOverlay(
+    value: String,
+    error: String?,
+    currentLimitMs: Int,
+    onValueChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Limit (ms)") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Timer limit in milliseconds. Current: $currentLimitMs ms",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { raw ->
+                        onValueChange(raw.filter { it.isDigit() })
+                    },
+                    singleLine = true,
+                    label = { Text("Limit (ms)") },
+                )
+                if (error != null) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable
@@ -864,6 +975,96 @@ private fun LobbyActionsCard(
 }
 
 @Composable
+private fun ControllerLobbyControlsCard(
+    onStartMonitoring: () -> Unit,
+) {
+    SprintSyncCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            PrimaryButton(
+                text = "Start Monitoring",
+                onClick = onStartMonitoring,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ControllerMonitoringControlsCard(
+    timerLimitMs: Int,
+    onStopMonitoring: () -> Unit,
+    onResetRun: () -> Unit,
+    onOpenTimerLimitOverlay: () -> Unit,
+    onUpdateTimerLimit: (Int) -> Unit,
+) {
+    SprintSyncCard {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Button(
+                onClick = onResetRun,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Default.History, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Reset")
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilledTonalButton(
+                    onClick = { onUpdateTimerLimit((timerLimitMs - 250).coerceAtLeast(0)) },
+                    modifier = Modifier.weight(0.2f),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Decrease Limit")
+                }
+
+                OutlinedButton(
+                    onClick = onOpenTimerLimitOverlay,
+                    modifier = Modifier.weight(0.6f),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Timer, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (timerLimitMs > 0) "Limit: ${timerLimitMs}ms" else "Limit")
+                }
+
+                FilledTonalButton(
+                    onClick = { onUpdateTimerLimit(timerLimitMs + 250) },
+                    modifier = Modifier.weight(0.2f),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Increase Limit")
+                }
+            }
+
+            Button(
+                onClick = onStopMonitoring,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Default.Stop, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Stop Monitoring")
+            }
+        }
+    }
+}
+
+@Composable
 private fun LobbyPeersCard(
     devices: List<SessionDevice>,
     hasConnectedPeers: Boolean,
@@ -976,6 +1177,7 @@ private fun DeviceAssignmentRow(
                     add(SessionDeviceRole.SPLIT3)
                     add(SessionDeviceRole.SPLIT4)
                     add(SessionDeviceRole.STOP)
+                    add(SessionDeviceRole.CONTROLLER)
                 }
 
                 Row(
@@ -1023,506 +1225,6 @@ private fun DeviceAssignmentRow(
                 MetricDisplay(label = "Role", value = sessionDeviceRoleLabel(device.role))
                 MetricDisplay(label = "Camera", value = sessionCameraFacingLabel(device.cameraFacing))
             }
-        }
-    }
-}
-
-@Composable
-private fun MonitoringSummaryCard(
-    isHost: Boolean,
-    controllerOnlyHost: Boolean,
-    localRole: SessionDeviceRole,
-    localCameraFacing: SessionCameraFacing,
-    showDebugInfo: Boolean,
-    connectionTypeLabel: String,
-    syncModeLabel: String,
-    latencyMs: Int?,
-    localAnalysisResolutionLabel: String,
-    userMonitoringEnabled: Boolean,
-    onSetMonitoringEnabled: (Boolean) -> Unit,
-    onAssignLocalCameraFacing: (SessionCameraFacing) -> Unit,
-    effectiveShowPreview: Boolean,
-    onShowPreviewChanged: (Boolean) -> Unit,
-    sensitivity: Float,
-    onUpdateSensitivity: (Float) -> Unit,
-    previewViewFactory: SensorNativePreviewViewFactory,
-    roiCenterX: Double,
-    roiWidth: Double,
-    operatingMode: SessionOperatingMode,
-    discoveredDisplayHosts: Map<String, String>,
-    displayConnectedHostName: String?,
-    displayDiscoveryActive: Boolean,
-    anchorDeviceName: String?,
-    anchorState: SessionAnchorState,
-    clockLockReasonLabel: String,
-    onStartDisplayDiscovery: () -> Unit,
-    onConnectDisplayHost: (String) -> Unit,
-    onResetRun: () -> Unit,
-) {
-    val latencyLabel = when (syncModeLabel) {
-        "NTP" -> if (latencyMs == null) "-" else "$latencyMs ms"
-        "GPS" -> "GPS"
-        else -> "-"
-    }
-
-    SprintSyncCard {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            if (controllerOnlyHost && operatingMode != SessionOperatingMode.SINGLE_DEVICE) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Controller mode active",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        "This host handles connections and race orchestration only.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray,
-                    )
-                    if (shouldShowMonitoringConnectionDebugInfo(showDebugInfo)) {
-                        Text(
-                            "Connection: $connectionTypeLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Sync: $syncModeLabel · Latency: $latencyLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Detection: $localAnalysisResolutionLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Anchor: ${anchorDeviceName ?: "-"} · State: ${anchorState.name}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Clock Lock: $clockLockReasonLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                    }
-                }
-            } else if (operatingMode == SessionOperatingMode.SINGLE_DEVICE) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (shouldShowMonitoringConnectionDebugInfo(showDebugInfo)) {
-                        Text(
-                            "Connection: $connectionTypeLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Sync: $syncModeLabel · Latency: $latencyLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Detection: $localAnalysisResolutionLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Anchor: ${anchorDeviceName ?: "-"} · State: ${anchorState.name}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        Text(
-                            "Clock Lock: $clockLockReasonLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                    }
-                    if (shouldShowMonitoringSensitivityControl(controllerOnlyHost, operatingMode)) {
-                        Text(
-                            "Sensitivity ${String.format("%.0f", sensitivity)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Slider(
-                            value = sensitivity,
-                            onValueChange = onUpdateSensitivity,
-                            valueRange = SENSITIVITY_MIN.toFloat()..SENSITIVITY_MAX.toFloat(),
-                            steps = SENSITIVITY_MAX - SENSITIVITY_MIN - 1,
-                        )
-                    }
-                    if (shouldShowSingleDeviceCameraFacingToggle(operatingMode)) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            SingleChoiceSegmentedButtonRow {
-                                SegmentedButton(
-                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                    onClick = { onAssignLocalCameraFacing(SessionCameraFacing.REAR) },
-                                    selected = localCameraFacing == SessionCameraFacing.REAR,
-                                    label = { Text("Rear") },
-                                )
-                                SegmentedButton(
-                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                    onClick = { onAssignLocalCameraFacing(SessionCameraFacing.FRONT) },
-                                    selected = localCameraFacing == SessionCameraFacing.FRONT,
-                                    label = { Text("Front") },
-                                )
-                            }
-                        }
-                    }
-                    if (shouldShowMonitoringPreview(operatingMode, effectiveShowPreview)) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            PreviewSurface(
-                                previewViewFactory = previewViewFactory,
-                                roiCenterX = roiCenterX,
-                                roiWidth = roiWidth,
-                            )
-                        }
-                    }
-                    if (shouldShowDisplayRelayControls(operatingMode)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            PrimaryButton(
-                                text = if (displayDiscoveryActive) "Display: Discovering" else "Display",
-                                onClick = onStartDisplayDiscovery,
-                                modifier = Modifier.weight(1f),
-                            )
-                            OutlinedButton(
-                                onClick = onResetRun,
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text("Reset")
-                            }
-                        }
-                        if (displayConnectedHostName != null) {
-                            Text(
-                                text = "Connected to $displayConnectedHostName",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray,
-                            )
-                        }
-                        val hosts = discoveredDisplayHosts.entries.toList()
-                        if (hosts.isNotEmpty()) {
-                            hosts.forEach { host ->
-                                OutlinedButton(
-                                    onClick = { onConnectDisplayHost(host.key) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text("Join ${host.value}")
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MonitoringPreviewInfoPanel(
-                        isHost = isHost,
-                        controllerOnlyHost = controllerOnlyHost,
-                        localRole = localRole,
-                        localCameraFacing = localCameraFacing,
-                        showDebugInfo = showDebugInfo,
-                        connectionTypeLabel = connectionTypeLabel,
-                        syncModeLabel = syncModeLabel,
-                        latencyLabel = latencyLabel,
-                        localAnalysisResolutionLabel = localAnalysisResolutionLabel,
-                        userMonitoringEnabled = userMonitoringEnabled,
-                        onSetMonitoringEnabled = onSetMonitoringEnabled,
-                        onAssignLocalCameraFacing = onAssignLocalCameraFacing,
-                        effectiveShowPreview = effectiveShowPreview,
-                        onShowPreviewChanged = onShowPreviewChanged,
-                        sensitivity = sensitivity,
-                        onUpdateSensitivity = onUpdateSensitivity,
-                        operatingMode = operatingMode,
-                        discoveredDisplayHosts = discoveredDisplayHosts,
-                        displayConnectedHostName = displayConnectedHostName,
-                        displayDiscoveryActive = displayDiscoveryActive,
-                        onStartDisplayDiscovery = onStartDisplayDiscovery,
-                        onConnectDisplayHost = onConnectDisplayHost,
-                    )
-                    if (shouldShowMonitoringPreview(operatingMode, effectiveShowPreview)) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            PreviewSurface(
-                                previewViewFactory = previewViewFactory,
-                                roiCenterX = roiCenterX,
-                                roiWidth = roiWidth,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HostConnectedDeviceCards(
-    cards: List<ConnectedDeviceMonitoringCardUiState>,
-    showDebugInfo: Boolean,
-    onRequestRemoteResync: (String) -> Unit,
-    onUpdateRemoteSensitivity: (String, Int) -> Unit,
-) {
-    SprintSyncCard {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SectionHeader("Connected Device Cards")
-            cards.forEach { card ->
-                Card {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(card.deviceName, fontWeight = FontWeight.SemiBold)
-                        val roleLabel = sessionDeviceRoleLabel(card.role)
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFFF3EFF7))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            Text(
-                                text = "Role: $roleLabel",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 24.sp,
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            OutlinedButton(
-                                onClick = { onRequestRemoteResync(card.endpointId) },
-                                enabled = card.connected,
-                            ) {
-                                Text("Resync")
-                            }
-                        }
-                        Text(
-                            "Latency: ${card.latencyMs?.let { "$it ms" } ?: "-"} · Sync: ${if (card.clockSynced) "✓" else "✗"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                        )
-                        if (showDebugInfo) {
-                            val resolutionLabel = if (card.analysisWidth != null && card.analysisHeight != null) {
-                                "${card.analysisWidth}x${card.analysisHeight}"
-                            } else {
-                                "-"
-                            }
-                            Text(
-                                "Detection: $resolutionLabel",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray,
-                            )
-                        }
-                        Text("Sensitivity ${card.sensitivity}", style = MaterialTheme.typography.bodySmall)
-                        Slider(
-                            value = card.sensitivity.toFloat(),
-                            onValueChange = { updated ->
-                                card.stableDeviceId?.let { stableDeviceId ->
-                                    onUpdateRemoteSensitivity(stableDeviceId, updated.roundToInt())
-                                }
-                            },
-                            valueRange = SENSITIVITY_MIN.toFloat()..SENSITIVITY_MAX.toFloat(),
-                            steps = SENSITIVITY_MAX - SENSITIVITY_MIN - 1,
-                            enabled = card.connected && card.stableDeviceId != null,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MonitoringPreviewInfoPanel(
-    isHost: Boolean,
-    controllerOnlyHost: Boolean,
-    localRole: SessionDeviceRole,
-    localCameraFacing: SessionCameraFacing,
-    showDebugInfo: Boolean,
-    connectionTypeLabel: String,
-    syncModeLabel: String,
-    latencyLabel: String,
-    localAnalysisResolutionLabel: String,
-    userMonitoringEnabled: Boolean,
-    onSetMonitoringEnabled: (Boolean) -> Unit,
-    onAssignLocalCameraFacing: (SessionCameraFacing) -> Unit,
-    effectiveShowPreview: Boolean,
-    onShowPreviewChanged: (Boolean) -> Unit,
-    sensitivity: Float,
-    onUpdateSensitivity: (Float) -> Unit,
-    operatingMode: SessionOperatingMode,
-    discoveredDisplayHosts: Map<String, String>,
-    displayConnectedHostName: String?,
-    displayDiscoveryActive: Boolean,
-    onStartDisplayDiscovery: () -> Unit,
-    onConnectDisplayHost: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (shouldShowMonitoringRoleAndToggles(operatingMode) && localRole != SessionDeviceRole.UNASSIGNED) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Role: ${sessionDeviceRoleLabel(localRole)}",
-                    fontWeight = FontWeight.Bold,
-                )
-                if (!isHost) {
-                    Text("Waiting for host...", color = Color.Gray, fontStyle = FontStyle.Italic)
-                }
-            }
-        }
-        if (shouldShowMonitoringConnectionDebugInfo(showDebugInfo)) {
-            Text("Connection: $connectionTypeLabel", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-            Text(
-                "Sync: $syncModeLabel · Latency: $latencyLabel",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray,
-            )
-            Text(
-                "Detection: $localAnalysisResolutionLabel",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray,
-            )
-        }
-        if (shouldShowMonitoringSensitivityControl(controllerOnlyHost, operatingMode)) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Sensitivity ${String.format("%.0f", sensitivity)}",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-            )
-            Slider(
-                value = sensitivity,
-                onValueChange = onUpdateSensitivity,
-                valueRange = SENSITIVITY_MIN.toFloat()..SENSITIVITY_MAX.toFloat(),
-                steps = SENSITIVITY_MAX - SENSITIVITY_MIN - 1,
-            )
-        }
-        if (!controllerOnlyHost && shouldShowMonitoringPreviewToggle(operatingMode)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Preview", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.width(8.dp))
-                Switch(
-                    checked = effectiveShowPreview,
-                    enabled = true,
-                    onCheckedChange = onShowPreviewChanged,
-                )
-            }
-        }
-        if (!controllerOnlyHost && shouldShowSingleDeviceCameraFacingToggle(operatingMode)) {
-            Spacer(Modifier.height(4.dp))
-            SingleChoiceSegmentedButtonRow {
-                SegmentedButton(
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    onClick = { onAssignLocalCameraFacing(SessionCameraFacing.REAR) },
-                    selected = localCameraFacing == SessionCameraFacing.REAR,
-                    label = { Text("Rear") },
-                )
-                SegmentedButton(
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    onClick = { onAssignLocalCameraFacing(SessionCameraFacing.FRONT) },
-                    selected = localCameraFacing == SessionCameraFacing.FRONT,
-                    label = { Text("Front") },
-                )
-            }
-        }
-        if (shouldShowDisplayRelayControls(operatingMode)) {
-            Spacer(Modifier.height(4.dp))
-            PrimaryButton(
-                text = if (displayDiscoveryActive) "Display: Discovering" else "Display",
-                onClick = onStartDisplayDiscovery,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (displayConnectedHostName != null) {
-                Text(
-                    text = "Connected to $displayConnectedHostName",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
-                )
-            }
-            val hosts = discoveredDisplayHosts.entries.toList()
-            if (hosts.isNotEmpty()) {
-                hosts.forEach { host ->
-                    OutlinedButton(
-                        onClick = { onConnectDisplayHost(host.key) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Join ${host.value}")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ClockWarningCard(text: String) {
-    SprintSyncCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Text("!", color = Color(0xFFD97706), fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(8.dp))
-            Text(text, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun PreviewSurface(previewViewFactory: SensorNativePreviewViewFactory, roiCenterX: Double, roiWidth: Double) {
-    Box(
-        modifier = Modifier
-            .width(180.dp)
-            .height(120.dp)
-            .clip(MaterialTheme.shapes.medium),
-    ) {
-        AndroidView(
-            modifier = Modifier
-                .fillMaxSize()
-                .clipToBounds(),
-            factory = { context ->
-                previewViewFactory.createPreviewView(context)
-            },
-            onRelease = { view ->
-                previewViewFactory.detachPreviewView(view)
-            },
-        )
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val normalized = roiCenterX.coerceIn(0.0, 1.0).toFloat()
-            val centerX = size.width * normalized
-            val centerY = size.height * 0.5f
-            val squareSize = (size.width * roiWidth.coerceIn(0.03, 0.40).toFloat())
-                .coerceAtLeast(8.dp.toPx())
-                .coerceAtMost(size.height)
-            drawRect(
-                color = Color(0xFF005A8D),
-                topLeft = androidx.compose.ui.geometry.Offset(
-                    x = centerX - (squareSize / 2f),
-                    y = centerY - (squareSize / 2f),
-                ),
-                size = androidx.compose.ui.geometry.Size(squareSize, squareSize),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
-            )
         }
     }
 }
@@ -1906,292 +1608,6 @@ private fun RunDetailsOverlay(
 }
 
 @Composable
-private fun SaveRunDetailsDialog(
-    athleteName: String,
-    error: String?,
-    onValueChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Save Details Result") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = athleteName,
-                    onValueChange = onValueChange,
-                    label = { Text("Athlete Name") },
-                    singleLine = true,
-                )
-                Text(
-                    text = "Saved name format: athlete_dd_MM_yyyy",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (error != null) {
-                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
-}
-
-@Composable
-private fun SaveResultDialog(
-    value: String,
-    error: String?,
-    onValueChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Save Result") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    label = { Text("Name") },
-                    singleLine = true,
-                )
-                if (error != null) {
-                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
-}
-
-@Composable
-private fun SavedResultsDialog(
-    rows: List<SavedRunResult>,
-    onDismiss: () -> Unit,
-    onDelete: (String) -> Unit,
-    onOpen: (SavedRunResult) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Results") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Name", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    Text("Time", modifier = Modifier.width(88.dp), fontWeight = FontWeight.SemiBold)
-                    Text("Open", modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold)
-                    Text("Delete", modifier = Modifier.width(60.dp), fontWeight = FontWeight.SemiBold)
-                }
-                if (rows.isEmpty()) {
-                    Text("No saved results yet.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                } else {
-                    rows.forEach { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            TextButton(
-                                onClick = { onOpen(row) },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(row.name)
-                            }
-                            Text(
-                                formatElapsedTimerDisplay((row.durationNanos / 1_000_000L).coerceAtLeast(0L)),
-                                modifier = Modifier.width(88.dp),
-                            )
-                            TextButton(
-                                onClick = { onOpen(row) },
-                                modifier = Modifier.width(60.dp),
-                            ) {
-                                Text("Open")
-                            }
-                            TextButton(
-                                onClick = { onDelete(row.id) },
-                                modifier = Modifier.width(60.dp),
-                            ) {
-                                Text("Delete")
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
-            }
-        },
-    )
-}
-
-@Composable
-private fun SavedRunResultDetailsDialog(result: SavedRunResult, onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
-    ) {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(result.name, style = MaterialTheme.typography.headlineSmall)
-                    TextButton(onClick = onDismiss) { Text("Close") }
-                }
-                SectionHeader("Calculated Results")
-                if (result.checkpointResults.isEmpty()) {
-                    Text(
-                        text = "No calculated checkpoint cards saved for this result.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(result.checkpointResults) { checkpoint ->
-                            SavedCheckpointResultCard(checkpoint = checkpoint)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SavedCheckpointResultCard(checkpoint: SavedRunCheckpointResult) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = "${distanceMetersLabel(checkpoint.distanceMeters)} • ${checkpoint.checkpointLabel}",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            MetricDisplay("Total Time", "${formatSeconds(checkpoint.totalTimeSec)} s")
-            MetricDisplay("Split Time", "${formatSeconds(checkpoint.splitTimeSec)} s")
-            MetricDisplay("Avg Speed", "${formatNumber(checkpoint.avgSpeedKmh)} km/h")
-            MetricDisplay("Acceleration", "${formatNumber(checkpoint.accelerationMs2)} m/s²")
-        }
-    }
-}
-
-@Composable
-private fun DisplayResultsCard(rows: List<DisplayLapRow>, modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val displayCardBackground = Color(0xFFFFCC00)
-        val displayTimeColor = Color(0xFF000000)
-        val displayDeviceColor = Color(0xFF000000)
-        val density = LocalDensity.current
-        val layout = displayLayoutSpecForCount(rows.size)
-        if (rows.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(260.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "WAITING FOR LAP RESULTS",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            return@BoxWithConstraints
-        }
-
-        val count = rows.size.coerceAtLeast(1)
-        val visibleCards = displayHorizontalVisibleCardSlots(count)
-        val availableHeight = maxHeight.takeIf { it > 0.dp } ?: layout.rowHeight
-        val cardHeight = availableHeight.coerceAtLeast(layout.minRowHeight)
-        val cardWidth = ((maxWidth - (layout.rowSpacing * (visibleCards - 1))) / visibleCards)
-            .coerceAtLeast(layout.minRowHeight)
-        val rowContentWidth = (cardWidth - (layout.horizontalPadding * 2)).coerceAtLeast(1.dp)
-        val clampedTimeFont = clampDisplayTimeFont(layout.timeFont, cardHeight, rowContentWidth, density)
-        val clampedDeviceFont = clampDisplayLabelFont(layout.deviceFont, cardHeight, density)
-
-        LazyRow(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.spacedBy(layout.rowSpacing),
-        ) {
-            items(rows) { row ->
-                Column(
-                    modifier = Modifier
-                        .width(cardWidth)
-                        .height(cardHeight)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(displayCardBackground)
-                        .padding(horizontal = layout.horizontalPadding, vertical = layout.verticalPadding),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = row.deviceName,
-                        style = MaterialTheme.typography.bodySmall.merge(
-                            TextStyle(
-                                fontSize = clampedDeviceFont,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.5.sp,
-                            ),
-                        ),
-                        color = displayDeviceColor,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = row.lapTimeLabel,
-                        style = MaterialTheme.typography.displayLarge.merge(
-                            InterExtraBoldTabularTypography.merge(
-                                TextStyle(
-                                    fontSize = clampedTimeFont,
-                                ),
-                            ),
-                        ),
-                        color = displayTimeColor,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun ConnectedCard(connectedEndpoints: Set<String>) {
     SprintSyncCard {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -2348,11 +1764,54 @@ internal fun shouldShowHostConnectedDeviceCards(
         deviceProfile == "host_xiaomi"
 }
 
-internal fun shouldShowDisplayRelayControls(mode: SessionOperatingMode): Boolean =
-    mode == SessionOperatingMode.SINGLE_DEVICE
+internal fun shouldShowControllerLobbyControls(
+    stage: SessionStage,
+    operatingMode: SessionOperatingMode,
+    localRole: SessionDeviceRole,
+): Boolean {
+    return stage == SessionStage.LOBBY &&
+        operatingMode == SessionOperatingMode.NETWORK_RACE &&
+        localRole == SessionDeviceRole.CONTROLLER
+}
+
+internal fun shouldShowControllerMonitoringControls(
+    stage: SessionStage,
+    operatingMode: SessionOperatingMode,
+    localRole: SessionDeviceRole,
+): Boolean {
+    return stage == SessionStage.MONITORING &&
+        operatingMode == SessionOperatingMode.NETWORK_RACE &&
+        localRole == SessionDeviceRole.CONTROLLER
+}
+
+internal fun shouldHideDeviceFromConnectorAssignments(device: SessionDevice): Boolean {
+    if (device.role == SessionDeviceRole.DISPLAY) {
+        return true
+    }
+    return isDisplayTabletDeviceName(device.name)
+}
+
+internal fun isDisplayTabletDeviceName(name: String): Boolean {
+    val trimmed = name.trim()
+    if (trimmed.isEmpty()) {
+        return false
+    }
+    if (trimmed.equals("2410CRP4CG", ignoreCase = true)) {
+        return true
+    }
+    return trimmed.contains("xiaomi pad", ignoreCase = true)
+}
 
 private fun mapDeviceNameForUi(name: String): String {
     val trimmed = name.trim()
+
+    // Map IP addresses to friendly names
+    if (trimmed.startsWith("192.168.0.101")) return "Pixel-7"
+    if (trimmed.startsWith("192.168.0.102")) return "OnePlus"
+    if (trimmed.startsWith("192.168.0.103")) return "Xiaomi-Pad-7"
+    if (trimmed.startsWith("192.168.0.104")) return "Redmi-Note-12"
+    if (trimmed.startsWith("192.168.0.105")) return "HUAWEI_P20"
+
     if (trimmed.isEmpty()) {
         return "Unknown Device"
     }
@@ -2376,6 +1835,14 @@ private fun mapDeviceNameForUi(name: String): String {
 
 private fun normalizedDeviceNameForDisplay(name: String): String {
     val trimmed = name.trim()
+
+    // Map IP addresses to friendly names
+    if (trimmed.startsWith("192.168.0.101")) return "Pixel-7"
+    if (trimmed.startsWith("192.168.0.102")) return "OnePlus"
+    if (trimmed.startsWith("192.168.0.103")) return "Xiaomi-Pad-7"
+    if (trimmed.startsWith("192.168.0.104")) return "Redmi-Note-12"
+    if (trimmed.startsWith("192.168.0.105")) return "HUAWEI_P20"
+
     if (trimmed.isEmpty()) {
         return "Detecting..."
     }
@@ -2401,9 +1868,6 @@ private fun normalizedDeviceNameForDisplay(name: String): String {
     return trimmed
 }
 
-internal fun shouldShowMonitoringRoleAndToggles(mode: SessionOperatingMode): Boolean =
-    mode != SessionOperatingMode.SINGLE_DEVICE
-
 internal fun autoResetDelayOptionsSeconds(): IntRange = 1..5
 
 internal fun shouldShowAutoResetDelaySelector(autoResetEnabled: Boolean): Boolean = autoResetEnabled
@@ -2419,11 +1883,6 @@ internal fun shouldShowLobbyAutoResetSettingsCard(
         operatingMode == SessionOperatingMode.NETWORK_RACE &&
         isHost
 }
-
-internal fun shouldShowSingleDeviceCameraFacingToggle(mode: SessionOperatingMode): Boolean =
-    mode == SessionOperatingMode.SINGLE_DEVICE
-
-internal fun shouldShowMonitoringConnectionDebugInfo(showDebugInfo: Boolean): Boolean = showDebugInfo
 
 internal fun shouldShowSetupHostAction(showTabletRoleChoice: Boolean, tabletAlwaysHost: Boolean): Boolean =
     showTabletRoleChoice || tabletAlwaysHost
@@ -2449,115 +1908,7 @@ internal fun shouldUseTabletMinimalMonitoringUi(
         isHost
 }
 
-internal fun shouldShowMonitoringSensitivityControl(controllerOnlyHost: Boolean, mode: SessionOperatingMode): Boolean =
-    !controllerOnlyHost && mode != SessionOperatingMode.DISPLAY_HOST
-
-private const val SENSITIVITY_MIN = 1
-private const val SENSITIVITY_MAX = 100
-private const val THRESHOLD_MIN = 0.001
-private const val THRESHOLD_MAX = 0.08
-
-internal fun sensitivityToThreshold(sensitivity: Int): Double {
-    val clamped = sensitivity.coerceIn(SENSITIVITY_MIN, SENSITIVITY_MAX)
-    val normalized = (clamped - SENSITIVITY_MIN).toDouble() / (SENSITIVITY_MAX - SENSITIVITY_MIN).toDouble()
-    return THRESHOLD_MAX - normalized * (THRESHOLD_MAX - THRESHOLD_MIN)
-}
-
-internal fun thresholdToSensitivity(threshold: Double): Float {
-    val clamped = threshold.coerceIn(THRESHOLD_MIN, THRESHOLD_MAX)
-    val normalized = (clamped - THRESHOLD_MIN) / (THRESHOLD_MAX - THRESHOLD_MIN)
-    return (SENSITIVITY_MAX - normalized * (SENSITIVITY_MAX - SENSITIVITY_MIN)).toFloat()
-}
-
-internal fun shouldShowMonitoringPreview(mode: SessionOperatingMode, effectiveShowPreview: Boolean): Boolean =
-    effectiveShowPreview
-
-internal fun shouldShowMonitoringPreviewToggle(mode: SessionOperatingMode): Boolean =
-    mode != SessionOperatingMode.DISPLAY_HOST
-
-internal fun shouldShowRunDetailMetrics(mode: SessionOperatingMode): Boolean =
-    mode != SessionOperatingMode.SINGLE_DEVICE
-
-internal fun shouldShowCameraFpsInfo(showDebugInfo: Boolean): Boolean = showDebugInfo
-
-internal data class DisplayLayoutSpec(
-    val rowHeight: Dp,
-    val minRowHeight: Dp,
-    val rowSpacing: Dp,
-    val horizontalPadding: Dp,
-    val verticalPadding: Dp,
-    val timeFont: TextUnit,
-    val deviceFont: TextUnit,
-)
-
-internal fun displayLayoutSpecForCount(count: Int): DisplayLayoutSpec {
-    return when {
-        count <= 1 -> DisplayLayoutSpec(
-            rowHeight = 420.dp,
-            minRowHeight = 300.dp,
-            rowSpacing = 24.dp,
-            horizontalPadding = 26.dp,
-            verticalPadding = 22.dp,
-            timeFont = 168.sp,
-            deviceFont = 26.sp,
-        )
-        count == 2 -> DisplayLayoutSpec(
-            rowHeight = 330.dp,
-            minRowHeight = 230.dp,
-            rowSpacing = 18.dp,
-            horizontalPadding = 22.dp,
-            verticalPadding = 18.dp,
-            timeFont = 138.sp,
-            deviceFont = 22.sp,
-        )
-        count in 3..4 -> DisplayLayoutSpec(
-            rowHeight = 245.dp,
-            minRowHeight = 170.dp,
-            rowSpacing = 12.dp,
-            horizontalPadding = 18.dp,
-            verticalPadding = 14.dp,
-            timeFont = 104.sp,
-            deviceFont = 18.sp,
-        )
-        else -> DisplayLayoutSpec(
-            rowHeight = 182.dp,
-            minRowHeight = 130.dp,
-            rowSpacing = 8.dp,
-            horizontalPadding = 14.dp,
-            verticalPadding = 10.dp,
-            timeFont = 72.sp,
-            deviceFont = 15.sp,
-        )
-    }
-}
-
-internal fun displayHorizontalVisibleCardSlots(count: Int): Int = when {
-    count <= 1 -> 1
-    count == 2 -> 2
-    else -> 3
-}
-
-internal fun clampDisplayTimeFont(
-    base: TextUnit,
-    rowHeight: Dp,
-    rowContentWidth: Dp,
-    density: androidx.compose.ui.unit.Density,
-): TextUnit {
-    val maxByHeight = with(density) { (rowHeight * 0.74f).toSp() }
-    val maxChars = 8f // "MM:SS.cc"
-    val widthFactor = 0.62f // Approximate monospace glyph width in ems.
-    val maxByWidth = with(density) { (rowContentWidth / (maxChars * widthFactor)).toSp() }
-    return minOf(base.value, maxByHeight.value, maxByWidth.value).sp
-}
-
-internal fun clampDisplayLabelFont(base: TextUnit, rowHeight: Dp, density: androidx.compose.ui.unit.Density): TextUnit {
-    val maxByHeight = with(density) { (rowHeight * 0.16f).toSp() }
-    val minReadable = 12.sp
-    val clamped = minOf(base.value, maxByHeight.value).sp
-    return maxOf(clamped.value, minReadable.value).sp
-}
-
-private fun formatDurationNanos(nanos: Long): String {
-    val totalMillis = (nanos / 1_000_000L).coerceAtLeast(0L)
-    return formatElapsedTimerDisplay(totalMillis)
+internal fun parseTimerLimitMillisInput(raw: String): Int? {
+    val parsed = raw.trim().toIntOrNull() ?: return null
+    return parsed.takeIf { it > 0 }
 }

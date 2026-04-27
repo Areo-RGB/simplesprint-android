@@ -24,12 +24,16 @@ class LocalRepository(
         private const val TABLET_TIMER_SCALE_MIN_PERCENT = 28
         private const val TABLET_TIMER_SCALE_MAX_PERCENT = 52
         private const val TABLET_TIMER_SCALE_DEFAULT_PERCENT = 36
+        private const val TIMER_LIMIT_MIN_MS = 1
+        private const val TIMER_LIMIT_MAX_MS = 120_000
+        private const val TIMER_LIMIT_DEFAULT_MS = 6_000
         private val MOTION_CONFIG_KEY = stringPreferencesKey("motion_detection_config_v2")
         private val LAST_RUN_KEY = stringPreferencesKey("last_run_result_v2_nanos")
         private val SAVED_RUN_RESULTS_KEY = stringPreferencesKey("saved_run_results_v1")
         private val AUTO_RESET_ENABLED_KEY = booleanPreferencesKey("auto_reset_enabled_v1")
         private val AUTO_RESET_DELAY_SECONDS_KEY = intPreferencesKey("auto_reset_delay_seconds_v1")
         private val TABLET_TIMER_SCALE_PERCENT_KEY = intPreferencesKey("tablet_timer_scale_percent_v1")
+        private val TIMER_LIMIT_MS_KEY = intPreferencesKey("timer_limit_ms_v1")
     }
 
     suspend fun loadMotionConfig(): MotionDetectionConfig {
@@ -122,6 +126,18 @@ class LocalRepository(
                 TABLET_TIMER_SCALE_MIN_PERCENT,
                 TABLET_TIMER_SCALE_MAX_PERCENT,
             )
+        }
+    }
+
+    suspend fun loadTimerLimitMs(): Int {
+        val snapshot = context.dataStore.data.first()
+        val persisted = snapshot[TIMER_LIMIT_MS_KEY] ?: TIMER_LIMIT_DEFAULT_MS
+        return persisted.coerceIn(TIMER_LIMIT_MIN_MS, TIMER_LIMIT_MAX_MS)
+    }
+
+    suspend fun saveTimerLimitMs(limitMs: Int) {
+        context.dataStore.edit { prefs: MutablePreferences ->
+            prefs[TIMER_LIMIT_MS_KEY] = limitMs.coerceIn(TIMER_LIMIT_MIN_MS, TIMER_LIMIT_MAX_MS)
         }
     }
 }

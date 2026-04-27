@@ -210,6 +210,21 @@ class TelemetryEnvelopeFlatBufferCodecTest {
     }
 
     @Test
+    fun `host control command envelope round trips`() {
+        val message = SessionHostControlCommandMessage(
+            action = SessionHostControlAction.TIMER_SCALE_DELTA,
+            intValue = -1,
+        )
+
+        val encoded = TelemetryEnvelopeFlatBufferCodec.encodeHostControlCommand(message)
+        val decoded = TelemetryEnvelopeFlatBufferCodec.decode(encoded)
+
+        val payload = decoded as? DecodedTelemetryEnvelope.HostControlCommandEnvelope
+        assertNotNull(payload)
+        assertEquals(message, payload!!.message)
+    }
+
+    @Test
     fun `snapshot envelope decodes absent host offset as null`() {
         val message = SessionSnapshotMessage(
             stage = SessionStage.LOBBY,

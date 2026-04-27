@@ -3,6 +3,7 @@ package com.paul.simplesprint
 import android.Manifest
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
@@ -31,6 +32,10 @@ import com.paul.simplesprint.core.services.SessionConnectionEvent
 import com.paul.simplesprint.core.services.SessionConnectionStrategy
 import com.paul.simplesprint.core.services.SessionConnectionsManager
 import com.paul.simplesprint.core.services.TcpConnectionsManager
+import com.paul.simplesprint.features.display_results.ui.DisplayLapRow
+import com.paul.simplesprint.features.monitoring.ui.ConnectedDeviceMonitoringCardUiState
+import com.paul.simplesprint.features.monitoring.ui.sensitivityToThreshold
+import com.paul.simplesprint.features.monitoring.ui.thresholdToSensitivity
 import com.paul.simplesprint.features.motion_detection.MotionCameraFacing
 import com.paul.simplesprint.features.motion_detection.MotionDetectionController
 import com.paul.simplesprint.features.race_session.RaceSessionController
@@ -39,6 +44,8 @@ import com.paul.simplesprint.features.race_session.SessionAnchorState
 import com.paul.simplesprint.features.race_session.SessionCameraFacing
 import com.paul.simplesprint.features.race_session.SessionClockLockReason
 import com.paul.simplesprint.features.race_session.SessionDeviceRole
+import com.paul.simplesprint.features.race_session.SessionHostControlAction
+import com.paul.simplesprint.features.race_session.SessionHostControlCommandMessage
 import com.paul.simplesprint.features.race_session.SessionLapResultMessage
 import com.paul.simplesprint.features.race_session.SessionNetworkRole
 import com.paul.simplesprint.features.race_session.SessionOperatingMode
@@ -80,6 +87,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         private const val TABLET_TIMER_SCALE_MIN_PERCENT = 28
         private const val TABLET_TIMER_SCALE_MAX_PERCENT = 52
         private const val TABLET_TIMER_SCALE_STEP_PERCENT = 4
+        private const val TIMER_LIMIT_DEFAULT_MS = 6_000
     }
 
     private lateinit var sensorNativeController: SensorNativeController
@@ -106,6 +114,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     @Volatile
     private var autoResetDelaySeconds: Int = 3
     private var tabletTimerScalePercent: Int = 36
+    private var timerLimitMs: Int = TIMER_LIMIT_DEFAULT_MS
+    private var lastSeenFinishedRunSignature: String? = null
+    private var runFinishFeedbackInitialized: Boolean = false
+    private var feedbackPlayer: MediaPlayer? = null
     private var pendingAutoResetJob: Job? = null
     private var pendingAutoResetRunSignature: String? = null
     private var completedAutoResetRunSignature: String? = null
@@ -221,11 +233,14 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
             autoResetEnabled = localRepository.loadAutoResetEnabled()
             autoResetDelaySeconds = localRepository.loadAutoResetDelaySeconds()
             tabletTimerScalePercent = localRepository.loadTabletTimerScalePercent()
+            timerLimitMs = localRepository.loadTimerLimitMs()
             updateUiState {
                 copy(
                     autoResetEnabled = this@MainActivity.autoResetEnabled,
                     autoResetDelaySeconds = this@MainActivity.autoResetDelaySeconds,
                     tabletTimerScalePercent = this@MainActivity.tabletTimerScalePercent,
+                    timerLimitMs = this@MainActivity.timerLimitMs,
+                    timerLimitDraft = this@MainActivity.timerLimitMs.toString(),
                 )
             }
             syncControllerSummaries()
@@ -366,8 +381,19 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                     showTabletRoleChoice = isTabletRoleChoiceDevice,
                     tabletAlwaysHost = isForcedTabletHost,
                     onStartMonitoring = {
-                        val scope = if (isControllerOnlyHost) PermissionScope.NETWORK_ONLY else PermissionScope.CAMERA_AND_NETWORK
+                        val scope = if (isControllerOnlyHost || shouldUseRemoteControllerHostCommands()) {
+                            PermissionScope.NETWORK_ONLY
+                        } else {
+                            PermissionScope.CAMERA_AND_NETWORK
+                        }
                         requestPermissionsIfNeeded(scope) {
+                            if (shouldUseRemoteControllerHostCommands()) {
+                                sendControllerHostCommand(
+                                    SessionHostControlCommandMessage(action = SessionHostControlAction.START_MONITORING),
+                                )
+                                syncControllerSummaries()
+                                return@requestPermissionsIfNeeded
+                            }
                             val started = raceSessionController.startMonitoring()
                             if (started) {
                                 userMonitoringEnabled = !isControllerOnlyHost
@@ -486,6 +512,13 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                         syncControllerSummaries()
                     },
                     onStopMonitoring = {
+                        if (shouldUseRemoteControllerHostCommands()) {
+                            sendControllerHostCommand(
+                                SessionHostControlCommandMessage(action = SessionHostControlAction.STOP_MONITORING),
+                            )
+                            syncControllerSummaries()
+                            return@SprintSyncApp
+                        }
                         logRuntimeDiagnostic("stopMonitoring requested")
                         stopNsdDiscovery()
                         stopNsdHosting()
@@ -518,27 +551,101 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                         syncControllerSummaries()
                     },
                     onResetRun = {
+                        if (shouldUseRemoteControllerHostCommands()) {
+                            sendControllerHostCommand(
+                                SessionHostControlCommandMessage(action = SessionHostControlAction.RESET_RUN),
+                            )
+                            syncControllerSummaries()
+                            return@SprintSyncApp
+                        }
                         cancelPendingAutoReset("manual reset")
                         resetRunAndSync()
                     },
-                    onDecreaseTabletTimerSize = {
-                        val next = (tabletTimerScalePercent - TABLET_TIMER_SCALE_STEP_PERCENT)
-                            .coerceIn(TABLET_TIMER_SCALE_MIN_PERCENT, TABLET_TIMER_SCALE_MAX_PERCENT)
-                        if (next == tabletTimerScalePercent) return@SprintSyncApp
-                        tabletTimerScalePercent = next
-                        updateUiState { copy(tabletTimerScalePercent = tabletTimerScalePercent) }
-                        lifecycleScope.launch {
-                            localRepository.saveTabletTimerScalePercent(tabletTimerScalePercent)
+                    onUpdateTimerLimit = { nextLimit ->
+                        if (shouldUseRemoteControllerHostCommands()) {
+                            sendControllerHostCommand(
+                                SessionHostControlCommandMessage(
+                                    action = SessionHostControlAction.SET_TIMER_LIMIT_MS,
+                                    value = nextLimit.toLong(),
+                                ),
+                            )
+                        } else {
+                            applyTimerLimitMs(nextLimit)
                         }
+                        syncControllerSummaries()
+                    },
+                    onDecreaseTabletTimerSize = {
+                        if (shouldUseRemoteControllerHostCommands()) {
+                            sendControllerHostCommand(
+                                SessionHostControlCommandMessage(
+                                    action = SessionHostControlAction.TIMER_SCALE_DELTA,
+                                    value = -1L,
+                                ),
+                            )
+                        } else {
+                            applyTabletTimerScaleDelta(stepDelta = -1)
+                        }
+                        syncControllerSummaries()
                     },
                     onIncreaseTabletTimerSize = {
-                        val next = (tabletTimerScalePercent + TABLET_TIMER_SCALE_STEP_PERCENT)
-                            .coerceIn(TABLET_TIMER_SCALE_MIN_PERCENT, TABLET_TIMER_SCALE_MAX_PERCENT)
-                        if (next == tabletTimerScalePercent) return@SprintSyncApp
-                        tabletTimerScalePercent = next
-                        updateUiState { copy(tabletTimerScalePercent = tabletTimerScalePercent) }
-                        lifecycleScope.launch {
-                            localRepository.saveTabletTimerScalePercent(tabletTimerScalePercent)
+                        if (shouldUseRemoteControllerHostCommands()) {
+                            sendControllerHostCommand(
+                                SessionHostControlCommandMessage(
+                                    action = SessionHostControlAction.TIMER_SCALE_DELTA,
+                                    value = 1L,
+                                ),
+                            )
+                        } else {
+                            applyTabletTimerScaleDelta(stepDelta = 1)
+                        }
+                        syncControllerSummaries()
+                    },
+                    onOpenTimerLimitOverlay = {
+                        updateUiState {
+                            copy(
+                                showTimerLimitOverlay = true,
+                                timerLimitDraft = timerLimitMs.toString(),
+                                timerLimitError = null,
+                            )
+                        }
+                    },
+                    onDismissTimerLimitOverlay = {
+                        updateUiState {
+                            copy(
+                                showTimerLimitOverlay = false,
+                                timerLimitError = null,
+                            )
+                        }
+                    },
+                    onTimerLimitDraftChanged = { value ->
+                        updateUiState {
+                            copy(
+                                timerLimitDraft = value,
+                                timerLimitError = null,
+                            )
+                        }
+                    },
+                    onSaveTimerLimit = {
+                        val parsed = parseTimerLimitMillisInput(uiState.value.timerLimitDraft)
+                        if (parsed == null) {
+                            updateUiState { copy(timerLimitError = "Enter a positive whole number in milliseconds.") }
+                            return@SprintSyncApp
+                        }
+                        if (shouldUseRemoteControllerHostCommands()) {
+                            sendControllerHostCommand(
+                                SessionHostControlCommandMessage(
+                                    action = SessionHostControlAction.SET_TIMER_LIMIT_MS,
+                                    value = parsed.toLong(),
+                                ),
+                            )
+                            updateUiState {
+                                copy(
+                                    timerLimitError = null,
+                                    showTimerLimitOverlay = false,
+                                )
+                            }
+                        } else {
+                            applyTimerLimitMs(parsed)
                         }
                     },
                     onAssignRole = { deviceId, role ->
@@ -950,6 +1057,8 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         stopTimerRefreshLoop()
         stopNsdDiscovery()
         stopNsdHosting()
+        feedbackPlayer?.release()
+        feedbackPlayer = null
         applyTabletUiMaxBrightness(forceMax = false)
         releaseMonitoringWifiLock()
         connectionsManager.stopAll()
@@ -1014,13 +1123,15 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         stopNsdDiscovery()
         nsdServiceCoordinator.startDiscovery(
             onHostResolved = { host ->
-                onConnectionEvent(
-                    SessionConnectionEvent.EndpointFound(
-                        endpointId = host.endpointId,
-                        endpointName = host.endpointName,
-                        serviceId = DEFAULT_SERVICE_ID,
-                    ),
-                )
+                runOnUiThread {
+                    onConnectionEvent(
+                        SessionConnectionEvent.EndpointFound(
+                            endpointId = host.endpointId,
+                            endpointName = host.endpointName,
+                            serviceId = DEFAULT_SERVICE_ID,
+                        ),
+                    )
+                }
             },
             onComplete = { result ->
                 result.exceptionOrNull()?.let { error ->
@@ -1144,6 +1255,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         when (operatingMode) {
             SessionOperatingMode.NETWORK_RACE -> {
                 raceSessionController.onConnectionEvent(event)
+                applyPendingControllerHostCommandIfAny()
                 val state = raceSessionController.uiState.value
                 if (event is SessionConnectionEvent.EndpointFound) {
                     cancelMissingHostHintTimer()
@@ -1422,6 +1534,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         val nowMs = SystemClock.elapsedRealtime()
         val throttleElapsed = (nowMs - lastSyncControllerSummariesMs) >= FRAME_STATS_SYNC_THROTTLE_MS
         if (debugEnabled || !isFrameStats || throttleElapsed) {
+            applyPendingControllerHostCommandIfAny()
             syncControllerSummaries()
             lastSyncControllerSummariesMs = nowMs
         }
@@ -1429,6 +1542,65 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
 
     private fun firstConnectedEndpointId(): String? {
         return connectionsManager.connectedEndpoints().firstOrNull()
+    }
+
+    private fun shouldUseRemoteControllerHostCommands(): Boolean {
+        val raceState = raceSessionController.uiState.value
+        return raceState.operatingMode == SessionOperatingMode.NETWORK_RACE &&
+            raceState.networkRole == SessionNetworkRole.CLIENT &&
+            raceSessionController.localDeviceRole() == SessionDeviceRole.CONTROLLER
+    }
+
+    private fun sendControllerHostCommand(command: SessionHostControlCommandMessage): Boolean {
+        return raceSessionController.sendHostControlCommandToHost(command)
+    }
+
+    private fun applyPendingControllerHostCommandIfAny() {
+        val command = raceSessionController.consumePendingHostControlCommandFromController() ?: return
+        val raceState = raceSessionController.uiState.value
+        if (raceState.networkRole != SessionNetworkRole.HOST || raceState.operatingMode != SessionOperatingMode.NETWORK_RACE) {
+            return
+        }
+        when (command.action) {
+            SessionHostControlAction.START_MONITORING -> {
+                if (raceState.stage == SessionStage.LOBBY) {
+                    val started = raceSessionController.startMonitoring()
+                    if (started) {
+                        userMonitoringEnabled = !isControllerOnlyHost
+                    }
+                }
+            }
+
+            SessionHostControlAction.STOP_MONITORING -> {
+                if (raceState.stage == SessionStage.MONITORING) {
+                    raceSessionController.stopMonitoring()
+                }
+            }
+
+            SessionHostControlAction.RESET_RUN -> {
+                cancelPendingAutoReset("remote reset")
+                raceSessionController.resetRun()
+                updateUiState {
+                    copy(
+                        showRunDetailsOverlay = false,
+                        showRunDetailsSaveDialog = false,
+                        runDetailsResults = emptyList(),
+                        runDetailsValidationError = null,
+                        runDetailsSaveError = null,
+                    )
+                }
+            }
+
+            SessionHostControlAction.TIMER_SCALE_DELTA -> {
+                val stepDelta = command.value?.toInt() ?: return
+                applyTabletTimerScaleDelta(stepDelta = stepDelta)
+            }
+
+            SessionHostControlAction.SET_TIMER_LIMIT_MS -> {
+                val nextLimitMs = command.value?.toInt() ?: return
+                applyTimerLimitMs(nextLimitMs)
+            }
+        }
     }
 
     private fun syncControllerSummaries() {
@@ -1626,6 +1798,7 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
             raceState.monitoringActive &&
             hasPeers &&
             localRole != SessionDeviceRole.UNASSIGNED &&
+            localRole != SessionDeviceRole.CONTROLLER &&
             (!raceSessionController.hasFreshAnyClockLock() || raceState.anchorState == SessionAnchorState.LOST)
         ) {
             if (raceState.anchorState == SessionAnchorState.LOST) {
@@ -1682,6 +1855,19 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 startedSensorNanos = timelineForUi.hostStartSensorNanos,
                 stoppedSensorNanos = timelineForUi.hostStopSensorNanos,
                 monitoringActive = raceState.monitoringActive,
+            )
+        }
+        if (
+            shouldPlayTimerLimitFeedbackForDevice(
+                tabletAlwaysHost = isForcedTabletHost,
+                stage = raceState.stage,
+                operatingMode = mode,
+                isHost = isHost,
+            )
+        ) {
+            maybePlayRunFinishFeedback(
+                startedSensorNanos = timelineForUi.hostStartSensorNanos,
+                stoppedSensorNanos = timelineForUi.hostStopSensorNanos,
             )
         }
 
@@ -1756,7 +1942,8 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                         SessionDeviceRole.SPLIT4 -> 4
                         SessionDeviceRole.STOP -> 5
                         SessionDeviceRole.DISPLAY -> 6
-                        SessionDeviceRole.UNASSIGNED -> 7
+                        SessionDeviceRole.CONTROLLER -> 7
+                        SessionDeviceRole.UNASSIGNED -> 8
                     }
                 }.thenBy { it.deviceName.lowercase() },
             )
@@ -1794,7 +1981,8 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
                 runStatusLabel = runStatusLabel,
                 runMarksCount = marksCount,
                 elapsedDisplay = elapsedDisplay,
-                tabletTimerScalePercent = tabletTimerScalePercent,
+                tabletTimerScalePercent = this@MainActivity.tabletTimerScalePercent,
+                timerLimitMs = this@MainActivity.timerLimitMs,
                 threshold = motionState.config.threshold,
                 roiCenterX = motionState.config.roiCenterX,
                 roiWidth = motionState.config.roiWidth,
@@ -1843,6 +2031,39 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
             )
         }
         syncControllerSummaries()
+    }
+
+    private fun applyTabletTimerScaleDelta(stepDelta: Int): Boolean {
+        val next = (tabletTimerScalePercent + (stepDelta * TABLET_TIMER_SCALE_STEP_PERCENT))
+            .coerceIn(TABLET_TIMER_SCALE_MIN_PERCENT, TABLET_TIMER_SCALE_MAX_PERCENT)
+        if (next == tabletTimerScalePercent) {
+            return false
+        }
+        tabletTimerScalePercent = next
+        updateUiState { copy(tabletTimerScalePercent = this@MainActivity.tabletTimerScalePercent) }
+        lifecycleScope.launch {
+            localRepository.saveTabletTimerScalePercent(tabletTimerScalePercent)
+        }
+        return true
+    }
+
+    private fun applyTimerLimitMs(nextLimitMs: Int): Boolean {
+        if (nextLimitMs <= 0) {
+            return false
+        }
+        timerLimitMs = nextLimitMs
+        updateUiState {
+            copy(
+                timerLimitMs = this@MainActivity.timerLimitMs,
+                timerLimitDraft = this@MainActivity.timerLimitMs.toString(),
+                timerLimitError = null,
+                showTimerLimitOverlay = false,
+            )
+        }
+        lifecycleScope.launch {
+            localRepository.saveTimerLimitMs(timerLimitMs)
+        }
+        return true
     }
 
     private fun syncAutoResetScheduler(
@@ -2088,7 +2309,10 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
         if (mode == SessionOperatingMode.DISPLAY_HOST) {
             return false
         }
-        return userMonitoringEnabled && raceSessionController.localDeviceRole() != SessionDeviceRole.UNASSIGNED
+        val role = raceSessionController.localDeviceRole()
+        return userMonitoringEnabled &&
+            role != SessionDeviceRole.UNASSIGNED &&
+            role != SessionDeviceRole.CONTROLLER
     }
 
     private fun applyLocalMonitoringConfigFromSession() {
@@ -2125,6 +2349,50 @@ class MainActivity : ComponentActivity(), ActivityCompat.OnRequestPermissionsRes
     private fun formatElapsedDuration(durationNanos: Long): String {
         val totalMillis = (durationNanos / 1_000_000L).coerceAtLeast(0L)
         return formatElapsedTimerDisplay(totalMillis)
+    }
+
+    private fun maybePlayRunFinishFeedback(startedSensorNanos: Long?, stoppedSensorNanos: Long?) {
+        val finishedRunSignature = autoResetRunSignature(startedSensorNanos, stoppedSensorNanos)
+        val shouldPlay = shouldTriggerRunFinishFeedback(
+            finishedRunSignature = finishedRunSignature,
+            lastSeenFinishedRunSignature = lastSeenFinishedRunSignature,
+            initialized = runFinishFeedbackInitialized,
+        )
+        lastSeenFinishedRunSignature = finishedRunSignature
+        runFinishFeedbackInitialized = true
+        if (!shouldPlay) {
+            return
+        }
+        val feedback = resolveTimerLimitFeedback(
+            startedSensorNanos = startedSensorNanos,
+            stoppedSensorNanos = stoppedSensorNanos,
+            timerLimitMs = timerLimitMs,
+        ) ?: return
+        playTimerLimitFeedback(feedback)
+    }
+
+    private fun playTimerLimitFeedback(feedback: TimerLimitFeedback) {
+        feedbackPlayer?.release()
+        val soundRes = when (feedback) {
+            TimerLimitFeedback.WITHIN_LIMIT -> R.raw.race_win
+            TimerLimitFeedback.OVER_LIMIT -> R.raw.race_fail
+        }
+        val player = MediaPlayer.create(this, soundRes) ?: return
+        feedbackPlayer = player
+        player.setOnCompletionListener {
+            it.release()
+            if (feedbackPlayer === it) {
+                feedbackPlayer = null
+            }
+        }
+        player.setOnErrorListener { mp, _, _ ->
+            mp.release()
+            if (feedbackPlayer === mp) {
+                feedbackPlayer = null
+            }
+            true
+        }
+        player.start()
     }
 
     @Synchronized
@@ -2612,6 +2880,51 @@ internal fun autoResetRunSignature(startedSensorNanos: Long?, stoppedSensorNanos
         return null
     }
     return "$startedSensorNanos:$stoppedSensorNanos"
+}
+
+internal enum class TimerLimitFeedback {
+    WITHIN_LIMIT,
+    OVER_LIMIT,
+}
+
+internal fun shouldTriggerRunFinishFeedback(
+    finishedRunSignature: String?,
+    lastSeenFinishedRunSignature: String?,
+    initialized: Boolean,
+): Boolean {
+    if (!initialized || finishedRunSignature == null) {
+        return false
+    }
+    return finishedRunSignature != lastSeenFinishedRunSignature
+}
+
+internal fun resolveTimerLimitFeedback(
+    startedSensorNanos: Long?,
+    stoppedSensorNanos: Long?,
+    timerLimitMs: Int,
+): TimerLimitFeedback? {
+    val started = startedSensorNanos ?: return null
+    val stopped = stoppedSensorNanos ?: return null
+    val elapsedMs = ((stopped - started).coerceAtLeast(0L)) / 1_000_000L
+    return if (elapsedMs <= timerLimitMs.toLong()) {
+        TimerLimitFeedback.WITHIN_LIMIT
+    } else {
+        TimerLimitFeedback.OVER_LIMIT
+    }
+}
+
+internal fun shouldPlayTimerLimitFeedbackForDevice(
+    tabletAlwaysHost: Boolean,
+    stage: SessionStage,
+    operatingMode: SessionOperatingMode,
+    isHost: Boolean,
+): Boolean {
+    return shouldUseTabletMinimalMonitoringUi(
+        tabletAlwaysHost = tabletAlwaysHost,
+        stage = stage,
+        operatingMode = operatingMode,
+        isHost = isHost,
+    )
 }
 
 internal fun shouldScheduleAutoReset(

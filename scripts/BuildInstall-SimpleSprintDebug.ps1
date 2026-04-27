@@ -104,6 +104,14 @@ if ($connectedSerials -notcontains $TabletHostSerial) {
     throw "Tablet host serial '$TabletHostSerial' is not connected. Connected serials: $($connectedSerials -join ', ')"
 }
 
+Invoke-Step -Name "Assemble debug APK (tablet host profile)" -Action {
+    .\gradlew.bat :app:assembleDebug -PtabletAlwaysHost=true | Out-Host
+}
+
+Invoke-Step -Name "Install tablet-host APK on $TabletHostSerial" -Action {
+    powershell -ExecutionPolicy Bypass -File .\scripts\Install-SimpleSprintDebug.ps1 -DeviceId $TabletHostSerial | Out-Host
+}
+
 $clientSerials = @($connectedSerials | Where-Object { $_ -ne $TabletHostSerial })
 
 if ($clientSerials.Count -gt 0) {
@@ -116,14 +124,6 @@ if ($clientSerials.Count -gt 0) {
             powershell -ExecutionPolicy Bypass -File .\scripts\Install-SimpleSprintDebug.ps1 -DeviceId $deviceId | Out-Host
         }
     }
-}
-
-Invoke-Step -Name "Assemble debug APK (tablet host profile)" -Action {
-    .\gradlew.bat :app:assembleDebug -PtabletAlwaysHost=true | Out-Host
-}
-
-Invoke-Step -Name "Install tablet-host APK on $TabletHostSerial" -Action {
-    powershell -ExecutionPolicy Bypass -File .\scripts\Install-SimpleSprintDebug.ps1 -DeviceId $TabletHostSerial | Out-Host
 }
 
 Write-Host "`nDone. Debug build installed and launched. tablet-host=$TabletHostSerial"

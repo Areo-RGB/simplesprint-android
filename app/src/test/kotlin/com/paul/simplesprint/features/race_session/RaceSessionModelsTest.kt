@@ -259,7 +259,7 @@ class RaceSessionModelsTest {
     }
 
     @Test
-    fun `device role parsing and labels include explicit split checkpoints and display`() {
+    fun `device role parsing and labels include explicit split checkpoints display and controller`() {
         assertEquals(SessionDeviceRole.SPLIT1, sessionDeviceRoleFromName("split1"))
         assertEquals("Split 1", sessionDeviceRoleLabel(SessionDeviceRole.SPLIT1))
         assertEquals(SessionDeviceRole.SPLIT2, sessionDeviceRoleFromName("split2"))
@@ -270,5 +270,32 @@ class RaceSessionModelsTest {
         assertEquals("Split 4", sessionDeviceRoleLabel(SessionDeviceRole.SPLIT4))
         assertEquals(SessionDeviceRole.DISPLAY, sessionDeviceRoleFromName("display"))
         assertEquals("Display", sessionDeviceRoleLabel(SessionDeviceRole.DISPLAY))
+        assertEquals(SessionDeviceRole.CONTROLLER, sessionDeviceRoleFromName("controller"))
+        assertEquals("Controller", sessionDeviceRoleLabel(SessionDeviceRole.CONTROLLER))
+    }
+
+    @Test
+    fun `host control command message round-trips for start and timer settings`() {
+        val start = SessionHostControlCommandMessage(
+            action = SessionHostControlAction.START_MONITORING,
+        )
+        val timerLimit = SessionHostControlCommandMessage(
+            action = SessionHostControlAction.SET_TIMER_LIMIT_MS,
+            intValue = 5800,
+        )
+
+        assertEquals(start, SessionHostControlCommandMessage.tryParse(start.toJsonString()))
+        assertEquals(timerLimit, SessionHostControlCommandMessage.tryParse(timerLimit.toJsonString()))
+    }
+
+    @Test
+    fun `host control command parser rejects invalid int value combinations`() {
+        val startWithInt = """{"type":"host_control_command","action":"start_monitoring","intValue":2}"""
+        val timerNoInt = """{"type":"host_control_command","action":"set_timer_limit_ms"}"""
+        val badDelta = """{"type":"host_control_command","action":"timer_scale_delta","intValue":2}"""
+
+        assertNull(SessionHostControlCommandMessage.tryParse(startWithInt))
+        assertNull(SessionHostControlCommandMessage.tryParse(timerNoInt))
+        assertNull(SessionHostControlCommandMessage.tryParse(badDelta))
     }
 }

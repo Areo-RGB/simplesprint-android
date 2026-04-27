@@ -8,7 +8,8 @@ enum SessionDeviceRole : byte {
   SPLIT3 = 4,
   SPLIT4 = 5,
   STOP = 6,
-  DISPLAY = 7
+  DISPLAY = 7,
+  CONTROLLER = 8
 }
 
 table SessionSplitMark {
@@ -74,6 +75,12 @@ table DeviceConfigUpdate {
   sensitivity: int;
 }
 
+table HostControlCommand {
+  action: string;
+  intValue: int = 0;
+  hasIntValue: bool = false;
+}
+
 table ClockResyncRequest {
   sampleCount: int;
 }
@@ -110,7 +117,8 @@ union TelemetryPayload {
   ClockResyncRequest,
   DeviceIdentity,
   DeviceTelemetry,
-  LapResult
+  LapResult,
+  HostControlCommand
 }
 
 table TelemetryEnvelope {

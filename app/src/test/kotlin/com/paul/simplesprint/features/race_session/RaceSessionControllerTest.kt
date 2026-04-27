@@ -17,6 +17,136 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class RaceSessionControllerTest {
     @Test
+    fun `assign role keeps controller unique across devices`() {
+        val controller = RaceSessionController(
+            loadLastRun = { null },
+            saveLastRun = { },
+            sendMessage = { _, _, onComplete -> onComplete(Result.success(Unit)) },
+            ioDispatcher = Dispatchers.Unconfined,
+            nowElapsedNanos = { 1L },
+        )
+        controller.setNetworkRole(SessionNetworkRole.HOST)
+        controller.onConnectionEvent(
+            SessionConnectionEvent.ConnectionResult(
+                endpointId = "ep1",
+                endpointName = "Peer 1",
+                connected = true,
+                statusCode = 0,
+                statusMessage = null,
+            ),
+        )
+        controller.onConnectionEvent(
+            SessionConnectionEvent.ConnectionResult(
+                endpointId = "ep2",
+                endpointName = "Peer 2",
+                connected = true,
+                statusCode = 0,
+                statusMessage = null,
+            ),
+        )
+
+        controller.assignRole("ep1", SessionDeviceRole.CONTROLLER)
+        controller.assignRole("ep2", SessionDeviceRole.CONTROLLER)
+
+        assertEquals(SessionDeviceRole.UNASSIGNED, controller.uiState.value.devices.first { it.id == "ep1" }.role)
+        assertEquals(SessionDeviceRole.CONTROLLER, controller.uiState.value.devices.first { it.id == "ep2" }.role)
+    }
+
+    @Test
+    fun `host control command accepted from controller and rejected from non controller`() {
+        val controller = RaceSessionController(
+            loadLastRun = { null },
+            saveLastRun = { },
+            sendMessage = { _, _, onComplete -> onComplete(Result.success(Unit)) },
+            ioDispatcher = Dispatchers.Unconfined,
+            nowElapsedNanos = { 1L },
+        )
+        controller.setNetworkRole(SessionNetworkRole.HOST)
+        controller.onConnectionEvent(
+            SessionConnectionEvent.ConnectionResult(
+                endpointId = "controller-ep",
+                endpointName = "Controller",
+                connected = true,
+                statusCode = 0,
+                statusMessage = null,
+            ),
+        )
+        controller.onConnectionEvent(
+            SessionConnectionEvent.ConnectionResult(
+                endpointId = "other-ep",
+                endpointName = "Other",
+                connected = true,
+                statusCode = 0,
+                statusMessage = null,
+            ),
+        )
+        controller.assignRole("controller-ep", SessionDeviceRole.CONTROLLER)
+
+        val resetCommand = SessionHostControlCommandMessage(
+            action = SessionHostControlAction.RESET_RUN,
+        )
+        controller.onConnectionEvent(
+            SessionConnectionEvent.PayloadReceived(
+                endpointId = "controller-ep",
+                message = resetCommand.toJsonString(),
+            ),
+        )
+
+        val accepted = controller.consumePendingHostControlCommandFromController()
+        assertNotNull(accepted)
+        assertEquals(SessionHostControlAction.RESET_RUN, accepted?.action)
+
+        controller.onConnectionEvent(
+            SessionConnectionEvent.PayloadReceived(
+                endpointId = "other-ep",
+                message = resetCommand.toJsonString(),
+            ),
+        )
+        assertNull(controller.consumePendingHostControlCommandFromController())
+        assertEquals("host_control_rejected", controller.uiState.value.lastEvent)
+    }
+
+    @Test
+    fun `controller client sends host control command to host`() {
+        val sentMessages = mutableListOf<String>()
+        val controller = RaceSessionController(
+            loadLastRun = { null },
+            saveLastRun = { },
+            sendMessage = { _, messageJson, onComplete ->
+                sentMessages += messageJson
+                onComplete(Result.success(Unit))
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+            nowElapsedNanos = { 1L },
+        )
+
+        controller.setNetworkRole(SessionNetworkRole.CLIENT)
+        controller.onConnectionEvent(
+            SessionConnectionEvent.ConnectionResult(
+                endpointId = "host-ep",
+                endpointName = "Host",
+                connected = true,
+                statusCode = 0,
+                statusMessage = null,
+            ),
+        )
+        controller.setDeviceRole(SessionDeviceRole.CONTROLLER)
+
+        val sent = controller.sendHostControlCommandToHost(
+            SessionHostControlCommandMessage(
+                action = SessionHostControlAction.START_MONITORING,
+            ),
+        )
+
+        assertTrue(sent)
+        assertTrue(sentMessages.isNotEmpty())
+        val hostControlMessage = sentMessages.firstOrNull { message ->
+            SessionHostControlCommandMessage.tryParse(message) != null
+        }
+        assertNotNull(hostControlMessage)
+    }
+
+    @Test
     fun `host xiaomi pins oneplus start huawei split and pixel stop`() {
         val devices = listOf(
             SessionDevice(id = "local", name = "Host Xiaomi", role = SessionDeviceRole.START, isLocal = true),

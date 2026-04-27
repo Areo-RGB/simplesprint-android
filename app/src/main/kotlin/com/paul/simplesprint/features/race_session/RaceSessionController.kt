@@ -97,6 +97,7 @@ data class RaceSessionUiState(
     val remoteDeviceTelemetry: Map<String, SessionRemoteDeviceTelemetryState> = emptyMap(),
     val clockSyncInProgress: Boolean = false,
     val pendingSensitivityUpdateFromHost: Int? = null,
+    val pendingHostControlCommandFromController: SessionHostControlCommandMessage? = null,
     val anchorDeviceId: String? = null,
     val anchorState: SessionAnchorState = SessionAnchorState.READY,
     val lastError: String? = null,
@@ -271,6 +272,12 @@ class RaceSessionController(
         return pending
     }
 
+    fun consumePendingHostControlCommandFromController(): SessionHostControlCommandMessage? {
+        val pending = _uiState.value.pendingHostControlCommandFromController ?: return null
+        _uiState.value = _uiState.value.copy(pendingHostControlCommandFromController = null)
+        return pending
+    }
+
     fun sendRemoteSensitivityUpdate(targetStableDeviceId: String, sensitivity: Int): Boolean {
         if (_uiState.value.networkRole != SessionNetworkRole.HOST) {
             return false
@@ -324,6 +331,7 @@ class RaceSessionController(
             return false
         }
         val message = SessionClockResyncRequestMessage(
+            reason = "manual_remote_request",
             sampleCount = sampleCount.coerceIn(3, 24),
         )
         if (enableBinaryTelemetry) {
@@ -347,6 +355,25 @@ class RaceSessionController(
             }
         }
         _uiState.value = _uiState.value.copy(lastEvent = "clock_resync_requested")
+        return true
+    }
+
+    fun sendHostControlCommandToHost(command: SessionHostControlCommandMessage): Boolean {
+        if (_uiState.value.networkRole != SessionNetworkRole.CLIENT) {
+            return false
+        }
+        if (localDeviceRole() != SessionDeviceRole.CONTROLLER) {
+            return false
+        }
+        val hostEndpointId = _uiState.value.connectedEndpoints.firstOrNull() ?: return false
+        if (enableBinaryTelemetry) {
+            sendTelemetryToHost(TelemetryEnvelopeFlatBufferCodec.encodeHostControlCommand(command))
+        } else {
+            sendToHost(command.toJsonString())
+        }
+        _uiState.value = _uiState.value.copy(
+            lastEvent = "host_control_command_sent_${command.action.name.lowercase()}",
+        )
         return true
     }
 
@@ -388,6 +415,7 @@ class RaceSessionController(
             remoteDeviceTelemetry = emptyMap(),
             deviceRole = localDeviceRole(),
             pendingSensitivityUpdateFromHost = null,
+            pendingHostControlCommandFromController = null,
             anchorDeviceId = null,
             anchorState = SessionAnchorState.READY,
             lastError = null,
@@ -418,6 +446,7 @@ class RaceSessionController(
             remoteDeviceTelemetry = emptyMap(),
             deviceRole = SessionDeviceRole.START,
             pendingSensitivityUpdateFromHost = null,
+            pendingHostControlCommandFromController = null,
             anchorDeviceId = null,
             anchorState = SessionAnchorState.READY,
             lastError = null,
@@ -448,6 +477,7 @@ class RaceSessionController(
             remoteDeviceTelemetry = emptyMap(),
             deviceRole = SessionDeviceRole.UNASSIGNED,
             pendingSensitivityUpdateFromHost = null,
+            pendingHostControlCommandFromController = null,
             anchorDeviceId = null,
             anchorState = SessionAnchorState.READY,
             lastError = null,
@@ -481,6 +511,7 @@ class RaceSessionController(
             remoteDeviceTelemetry = emptyMap(),
             deviceRole = SessionDeviceRole.UNASSIGNED,
             pendingSensitivityUpdateFromHost = null,
+            pendingHostControlCommandFromController = null,
             anchorDeviceId = null,
             anchorState = SessionAnchorState.READY,
             lastError = null,
@@ -496,6 +527,7 @@ class RaceSessionController(
             connectedEndpoints = emptySet(),
             remoteDeviceTelemetry = emptyMap(),
             pendingSensitivityUpdateFromHost = null,
+            pendingHostControlCommandFromController = null,
             anchorDeviceId = null,
             anchorState = SessionAnchorState.READY,
             lastError = null,
@@ -627,7 +659,8 @@ class RaceSessionController(
         if (
             role == SessionDeviceRole.START ||
             role == SessionDeviceRole.STOP ||
-            role == SessionDeviceRole.DISPLAY
+            role == SessionDeviceRole.DISPLAY ||
+            role == SessionDeviceRole.CONTROLLER
         ) {
             nextDevices = nextDevices.map { existing ->
                 if (existing.id != deviceId && existing.role == role) {
@@ -781,14 +814,11 @@ class RaceSessionController(
         if (role == SessionDeviceRole.UNASSIGNED) {
             return
         }
+        val mappedType = roleToTriggerType(role) ?: return
         val roleLabel = role.name.lowercase()
         _uiState.value = _uiState.value.copy(lastEvent = "local_trigger_detected_$roleLabel")
 
         if (_uiState.value.networkRole == SessionNetworkRole.HOST) {
-            val mappedType = roleToTriggerType(role)
-            if (mappedType == null) {
-                return
-            }
             ingestLocalTrigger(
                 triggerType = mappedType,
                 splitIndex = splitIndexForRole(role) ?: splitIndex,
@@ -956,7 +986,7 @@ class RaceSessionController(
         }
         val message = SessionTriggerMessage(
             triggerType = triggerType,
-            splitIndex = splitIndex.takeIf { triggerType.equals("split", ignoreCase = true) },
+            splitIndex = if (triggerType.equals("split", ignoreCase = true)) splitIndex else -1,
             triggerSensorNanos = triggerSensorNanos,
         )
         if (enableBinaryTelemetry) {
@@ -1244,6 +1274,10 @@ class RaceSessionController(
             handleRemoteConfigUpdate(configUpdate)
             return
         }
+        SessionHostControlCommandMessage.tryParse(rawMessage)?.let { command ->
+            handleHostControlCommand(endpointId, command)
+            return
+        }
 
         SessionDeviceTelemetryMessage.tryParse(rawMessage)?.let { telemetry ->
             handleDeviceTelemetry(endpointId, telemetry)
@@ -1309,6 +1343,11 @@ class RaceSessionController(
                 handleRemoteConfigUpdate(payload.message)
             }
 
+            is DecodedTelemetryEnvelope.HostControlCommandEnvelope -> {
+                _uiState.value = _uiState.value.copy(lastEvent = "telemetry_payload_received")
+                handleHostControlCommand(endpointId, payload.message)
+            }
+
             is DecodedTelemetryEnvelope.ClockResync -> {
                 _uiState.value = _uiState.value.copy(lastEvent = "telemetry_payload_received")
                 handleClockResyncRequest(endpointId, payload.message)
@@ -1367,7 +1406,7 @@ class RaceSessionController(
         }
         ingestLocalTrigger(
             triggerType = trigger.triggerType,
-            splitIndex = trigger.splitIndex ?: 0,
+            splitIndex = trigger.splitIndex,
             triggerSensorNanos = triggerSensorNanos,
             broadcast = false,
         )
@@ -1797,13 +1836,15 @@ class RaceSessionController(
                         return null
                     }
                     val lastMarker = timeline.hostSplitMarks.lastOrNull()?.hostSensorNanos ?: timeline.hostStartSensorNanos
+                    val splitIndex = splitIndexForRole(splitRole) ?: -1
                     if (triggerSensorNanos <= lastMarker) {
                         null
                     } else {
                         timeline.copy(
                             hostSplitMarks = timeline.hostSplitMarks + SessionSplitMark(
-                                role = splitRole,
                                 hostSensorNanos = triggerSensorNanos,
+                                role = splitRole,
+                                splitIndex = splitIndexForRole(splitRole) ?: -1,
                             ),
                         )
                     }
@@ -2094,6 +2135,28 @@ class RaceSessionController(
         )
     }
 
+    private fun handleHostControlCommand(endpointId: String, command: SessionHostControlCommandMessage) {
+        if (_uiState.value.networkRole != SessionNetworkRole.HOST) {
+            return
+        }
+        val senderRole = _uiState.value.devices
+            .firstOrNull { !it.isLocal && it.id == endpointId }
+            ?.role
+            ?: SessionDeviceRole.UNASSIGNED
+        if (senderRole != SessionDeviceRole.CONTROLLER) {
+            _uiState.value = _uiState.value.copy(
+                lastEvent = "host_control_rejected",
+                lastError = "host control rejected: endpoint is not controller",
+            )
+            return
+        }
+        _uiState.value = _uiState.value.copy(
+            pendingHostControlCommandFromController = command,
+            lastEvent = "host_control_received_${command.action.name.lowercase()}",
+            lastError = null,
+        )
+    }
+
     private fun handleClockResyncRequest(endpointId: String, request: SessionClockResyncRequestMessage) {
         if (_uiState.value.networkRole != SessionNetworkRole.CLIENT) {
             return
@@ -2115,6 +2178,7 @@ class RaceSessionController(
         val latencyMs = _clockState.value.hostClockRoundTripNanos?.let { (it.toDouble() / 1_000_000.0).roundToInt() }
         val message = SessionDeviceTelemetryMessage(
             stableDeviceId = localDeviceId,
+            deviceName = localDeviceName(),
             role = localDeviceRole(),
             sensitivity = localSensitivity.coerceIn(1, 100),
             latencyMs = latencyMs,
@@ -2191,7 +2255,9 @@ class RaceSessionController(
         connectedEndpoints: Set<String>,
     ): List<SessionDevice> {
         return devices.filter { device ->
-            device.isLocal || connectedEndpoints.contains(device.id)
+            device.isLocal ||
+                connectedEndpoints.contains(device.id) ||
+                device.role != SessionDeviceRole.UNASSIGNED
         }
     }
 
@@ -2208,7 +2274,10 @@ class RaceSessionController(
             .filter {
                 it.role == SessionDeviceRole.UNASSIGNED &&
                     !isTopazClientName(it.name) &&
-                    !isHuaweiClientName(it.name)
+                    !isHuaweiClientName(it.name) &&
+                    !isOnePlusClientName(it.name) &&
+                    !isPixelClientName(it.name) &&
+                    !isRedmiClientName(it.name)
             }
         if (remoteStartStopCandidates.isNotEmpty()) {
             nextDevices = nextDevices.map { existing ->
@@ -2234,7 +2303,10 @@ class RaceSessionController(
                 .firstOrNull {
                     it.role == SessionDeviceRole.UNASSIGNED &&
                         !isTopazClientName(it.name) &&
-                        !isHuaweiClientName(it.name)
+                        !isHuaweiClientName(it.name) &&
+                        !isOnePlusClientName(it.name) &&
+                        !isPixelClientName(it.name) &&
+                        !isRedmiClientName(it.name)
                 }
                 ?.id
                 ?: if (local.role == SessionDeviceRole.UNASSIGNED) local.id else null
@@ -2254,7 +2326,10 @@ class RaceSessionController(
                 .firstOrNull {
                     it.role == SessionDeviceRole.UNASSIGNED &&
                         !isTopazClientName(it.name) &&
-                        !isHuaweiClientName(it.name)
+                        !isHuaweiClientName(it.name) &&
+                        !isOnePlusClientName(it.name) &&
+                        !isPixelClientName(it.name) &&
+                        !isRedmiClientName(it.name)
                 }
                 ?.id
                 ?: if (nextDevices.any { it.id == local.id && it.role == SessionDeviceRole.UNASSIGNED }) local.id else null
@@ -2333,6 +2408,7 @@ class RaceSessionController(
             SessionDeviceRole.STOP -> "stop"
             SessionDeviceRole.UNASSIGNED -> null
             SessionDeviceRole.DISPLAY -> null
+            SessionDeviceRole.CONTROLLER -> null
         }
     }
 
@@ -2360,47 +2436,29 @@ internal fun applyPinnedHostRolesForDeviceProfile(
     devices: List<SessionDevice>,
     deviceProfile: String,
 ): List<SessionDevice> {
-    if (!deviceProfile.equals("host_xiaomi", ignoreCase = true)) {
-        return devices
-    }
-
     val remoteDevices = devices.filterNot { it.isLocal }
     val oneplusDevice = remoteDevices.firstOrNull { isOnePlusClientName(it.name) }
     val topazDevice = remoteDevices.firstOrNull { isTopazClientName(it.name) }
     val huaweiDevice = remoteDevices.firstOrNull { isHuaweiClientName(it.name) }
     val pixelDevice = remoteDevices.firstOrNull { isPixelClientName(it.name) }
+    val redmiDevice = remoteDevices.firstOrNull { isRedmiClientName(it.name) }
 
     var mapped = devices.map { device ->
+        if (device.role != SessionDeviceRole.UNASSIGNED) return@map device
+
         when (device.id) {
-            oneplusDevice?.id -> device.copy(role = SessionDeviceRole.START)
-            topazDevice?.id -> device.copy(role = SessionDeviceRole.SPLIT1)
-            huaweiDevice?.id -> device.copy(role = SessionDeviceRole.SPLIT2)
+            oneplusDevice?.id -> device.copy(role = SessionDeviceRole.CONTROLLER)
+            huaweiDevice?.id -> device.copy(role = SessionDeviceRole.START)
             pixelDevice?.id -> device.copy(role = SessionDeviceRole.STOP)
+            redmiDevice?.id -> device.copy(role = SessionDeviceRole.SPLIT1)
+            topazDevice?.id -> device.copy(role = SessionDeviceRole.SPLIT2)
             else -> device
         }
     }
 
-    oneplusDevice?.let { pinned ->
-        mapped = mapped.map { existing ->
-            if (existing.id != pinned.id && existing.role == SessionDeviceRole.START) {
-                existing.copy(role = SessionDeviceRole.UNASSIGNED)
-            } else {
-                existing
-            }
-        }
-    }
-    topazDevice?.let { pinned ->
-        mapped = mapped.map { existing ->
-            if (existing.id != pinned.id && existing.role == SessionDeviceRole.SPLIT1) {
-                existing.copy(role = SessionDeviceRole.UNASSIGNED)
-            } else {
-                existing
-            }
-        }
-    }
     huaweiDevice?.let { pinned ->
         mapped = mapped.map { existing ->
-            if (existing.id != pinned.id && existing.role == SessionDeviceRole.SPLIT2) {
+            if (existing.id != pinned.id && existing.role == SessionDeviceRole.START) {
                 existing.copy(role = SessionDeviceRole.UNASSIGNED)
             } else {
                 existing
@@ -2416,6 +2474,24 @@ internal fun applyPinnedHostRolesForDeviceProfile(
             }
         }
     }
+    oneplusDevice?.let { pinned ->
+        mapped = mapped.map { existing ->
+            if (existing.id != pinned.id && existing.role == SessionDeviceRole.CONTROLLER) {
+                existing.copy(role = SessionDeviceRole.UNASSIGNED)
+            } else {
+                existing
+            }
+        }
+    }
+    redmiDevice?.let { pinned ->
+        mapped = mapped.map { existing ->
+            if (existing.id != pinned.id && existing.role == SessionDeviceRole.SPLIT1) {
+                existing.copy(role = SessionDeviceRole.UNASSIGNED)
+            } else {
+                existing
+            }
+        }
+    }
 
     return mapped
 }
@@ -2425,6 +2501,7 @@ internal fun isOnePlusClientName(name: String): Boolean {
     if (trimmed.contains("oneplus", ignoreCase = true)) {
         return true
     }
+    if (trimmed.startsWith("192.168.0.102")) return true
     return Regex("^cph\\d{4,}$", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)
 }
 
@@ -2433,9 +2510,22 @@ internal fun isHuaweiClientName(name: String): Boolean {
     if (trimmed.contains("huawei", ignoreCase = true) || trimmed.contains("honor", ignoreCase = true)) {
         return true
     }
+    if (trimmed.startsWith("192.168.0.105")) return true
     return Regex("^(ane|els|lya|vtr|evr|noh|yas)-", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)
 }
 
 internal fun isTopazClientName(name: String): Boolean = name.trim().contains("topaz", ignoreCase = true)
 
-internal fun isPixelClientName(name: String): Boolean = name.trim().contains("pixel", ignoreCase = true)
+internal fun isRedmiClientName(name: String): Boolean {
+    val trimmed = name.trim()
+    if (trimmed.contains("redmi", ignoreCase = true)) return true
+    if (trimmed.startsWith("192.168.0.104")) return true
+    return false
+}
+
+internal fun isPixelClientName(name: String): Boolean {
+    val trimmed = name.trim()
+    if (trimmed.contains("pixel", ignoreCase = true)) return true
+    if (trimmed.startsWith("192.168.0.101")) return true
+    return false
+}

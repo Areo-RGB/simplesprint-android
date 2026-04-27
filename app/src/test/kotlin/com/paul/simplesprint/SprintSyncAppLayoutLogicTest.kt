@@ -3,6 +3,23 @@ package com.paul.simplesprint
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.paul.simplesprint.features.display_results.ui.clampDisplayLabelFont
+import com.paul.simplesprint.features.display_results.ui.clampDisplayTimeFont
+import com.paul.simplesprint.features.display_results.ui.displayHorizontalVisibleCardSlots
+import com.paul.simplesprint.features.display_results.ui.displayLayoutSpecForCount
+import com.paul.simplesprint.features.monitoring.ui.sensitivityToThreshold
+import com.paul.simplesprint.features.monitoring.ui.shouldShowCameraFpsInfo
+import com.paul.simplesprint.features.monitoring.ui.shouldShowDisplayRelayControls
+import com.paul.simplesprint.features.monitoring.ui.shouldShowMonitoringConnectionDebugInfo
+import com.paul.simplesprint.features.monitoring.ui.shouldShowMonitoringPreview
+import com.paul.simplesprint.features.monitoring.ui.shouldShowMonitoringPreviewToggle
+import com.paul.simplesprint.features.monitoring.ui.shouldShowMonitoringRoleAndToggles
+import com.paul.simplesprint.features.monitoring.ui.shouldShowMonitoringSensitivityControl
+import com.paul.simplesprint.features.monitoring.ui.shouldShowRunDetailMetrics
+import com.paul.simplesprint.features.monitoring.ui.shouldShowSingleDeviceCameraFacingToggle
+import com.paul.simplesprint.features.monitoring.ui.thresholdToSensitivity
+import com.paul.simplesprint.features.race_session.SessionDevice
+import com.paul.simplesprint.features.race_session.SessionDeviceRole
 import com.paul.simplesprint.features.race_session.SessionOperatingMode
 import com.paul.simplesprint.features.race_session.SessionStage
 import org.junit.Assert.assertEquals
@@ -137,11 +154,11 @@ class SprintSyncAppLayoutLogicTest {
     fun `single-device mode can hide preview and shows preview switch`() {
         assertTrue(shouldShowMonitoringPreview(SessionOperatingMode.SINGLE_DEVICE, effectiveShowPreview = true))
         assertFalse(shouldShowMonitoringPreview(SessionOperatingMode.SINGLE_DEVICE, effectiveShowPreview = false))
-        assertTrue(shouldShowMonitoringPreviewToggle(SessionOperatingMode.SINGLE_DEVICE))
+        assertTrue(shouldShowMonitoringPreviewToggle(SessionDeviceRole.START, SessionOperatingMode.SINGLE_DEVICE))
         assertTrue(shouldShowMonitoringPreview(SessionOperatingMode.NETWORK_RACE, effectiveShowPreview = true))
         assertFalse(shouldShowMonitoringPreview(SessionOperatingMode.NETWORK_RACE, effectiveShowPreview = false))
-        assertTrue(shouldShowMonitoringPreviewToggle(SessionOperatingMode.NETWORK_RACE))
-        assertFalse(shouldShowMonitoringPreviewToggle(SessionOperatingMode.DISPLAY_HOST))
+        assertTrue(shouldShowMonitoringPreviewToggle(SessionDeviceRole.START, SessionOperatingMode.NETWORK_RACE))
+        assertFalse(shouldShowMonitoringPreviewToggle(SessionDeviceRole.START, SessionOperatingMode.DISPLAY_HOST))
     }
 
     @Test
@@ -357,6 +374,16 @@ class SprintSyncAppLayoutLogicTest {
     }
 
     @Test
+    fun `timer limit input parsing accepts positive integers and rejects invalid values`() {
+        assertEquals(6000, parseTimerLimitMillisInput("6000"))
+        assertEquals(7, parseTimerLimitMillisInput(" 7 "))
+        assertEquals(null, parseTimerLimitMillisInput(""))
+        assertEquals(null, parseTimerLimitMillisInput("abc"))
+        assertEquals(null, parseTimerLimitMillisInput("0"))
+        assertEquals(null, parseTimerLimitMillisInput("-20"))
+    }
+
+    @Test
     fun `connected device cards show only for host xiaomi monitoring mode`() {
         assertTrue(
             shouldShowHostConnectedDeviceCards(
@@ -388,6 +415,104 @@ class SprintSyncAppLayoutLogicTest {
                 operatingMode = SessionOperatingMode.NETWORK_RACE,
                 isHost = true,
                 deviceProfile = "client_huawei",
+            ),
+        )
+    }
+
+    @Test
+    fun `controller control cards only show in network race for controller role`() {
+        assertTrue(
+            shouldShowControllerLobbyControls(
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                localRole = SessionDeviceRole.CONTROLLER,
+            ),
+        )
+        assertFalse(
+            shouldShowControllerLobbyControls(
+                stage = SessionStage.MONITORING,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                localRole = SessionDeviceRole.CONTROLLER,
+            ),
+        )
+        assertFalse(
+            shouldShowControllerLobbyControls(
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.SINGLE_DEVICE,
+                localRole = SessionDeviceRole.CONTROLLER,
+            ),
+        )
+        assertFalse(
+            shouldShowControllerLobbyControls(
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                localRole = SessionDeviceRole.START,
+            ),
+        )
+
+        assertTrue(
+            shouldShowControllerMonitoringControls(
+                stage = SessionStage.MONITORING,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                localRole = SessionDeviceRole.CONTROLLER,
+            ),
+        )
+        assertFalse(
+            shouldShowControllerMonitoringControls(
+                stage = SessionStage.LOBBY,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                localRole = SessionDeviceRole.CONTROLLER,
+            ),
+        )
+        assertFalse(
+            shouldShowControllerMonitoringControls(
+                stage = SessionStage.MONITORING,
+                operatingMode = SessionOperatingMode.DISPLAY_HOST,
+                localRole = SessionDeviceRole.CONTROLLER,
+            ),
+        )
+    }
+
+    @Test
+    fun `connector device assignments hide display role and xiaomi pad display tablets`() {
+        assertTrue(
+            shouldHideDeviceFromConnectorAssignments(
+                SessionDevice(
+                    id = "display-role",
+                    name = "Any Device",
+                    role = SessionDeviceRole.DISPLAY,
+                    isLocal = false,
+                ),
+            ),
+        )
+        assertTrue(
+            shouldHideDeviceFromConnectorAssignments(
+                SessionDevice(
+                    id = "pad-name",
+                    name = "Xiaomi Pad 7",
+                    role = SessionDeviceRole.UNASSIGNED,
+                    isLocal = false,
+                ),
+            ),
+        )
+        assertTrue(
+            shouldHideDeviceFromConnectorAssignments(
+                SessionDevice(
+                    id = "pad-model",
+                    name = "2410CRP4CG",
+                    role = SessionDeviceRole.UNASSIGNED,
+                    isLocal = false,
+                ),
+            ),
+        )
+        assertFalse(
+            shouldHideDeviceFromConnectorAssignments(
+                SessionDevice(
+                    id = "phone",
+                    name = "OnePlus 12",
+                    role = SessionDeviceRole.UNASSIGNED,
+                    isLocal = false,
+                ),
             ),
         )
     }

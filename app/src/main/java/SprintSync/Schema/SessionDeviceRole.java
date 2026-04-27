@@ -13,8 +13,9 @@ public final class SessionDeviceRole {
   public static final byte SPLIT4 = 5;
   public static final byte STOP = 6;
   public static final byte DISPLAY = 7;
+  public static final byte CONTROLLER = 8;
 
-  public static final String[] names = { "UNASSIGNED", "START", "SPLIT1", "SPLIT2", "SPLIT3", "SPLIT4", "STOP", "DISPLAY", };
+  public static final String[] names = { "UNASSIGNED", "START", "SPLIT1", "SPLIT2", "SPLIT3", "SPLIT4", "STOP", "DISPLAY", "CONTROLLER", };
 
   public static String name(int e) { return names[e]; }
 }

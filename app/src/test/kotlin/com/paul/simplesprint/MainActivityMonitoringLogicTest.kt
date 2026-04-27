@@ -152,6 +152,88 @@ class MainActivityMonitoringLogicTest {
     }
 
     @Test
+    fun `run finish feedback triggers only for new finished signatures after initialization`() {
+        assertFalse(
+            shouldTriggerRunFinishFeedback(
+                finishedRunSignature = "10:20",
+                lastSeenFinishedRunSignature = null,
+                initialized = false,
+            ),
+        )
+        assertTrue(
+            shouldTriggerRunFinishFeedback(
+                finishedRunSignature = "10:20",
+                lastSeenFinishedRunSignature = null,
+                initialized = true,
+            ),
+        )
+        assertFalse(
+            shouldTriggerRunFinishFeedback(
+                finishedRunSignature = "10:20",
+                lastSeenFinishedRunSignature = "10:20",
+                initialized = true,
+            ),
+        )
+        assertFalse(
+            shouldTriggerRunFinishFeedback(
+                finishedRunSignature = null,
+                lastSeenFinishedRunSignature = "10:20",
+                initialized = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `timer limit feedback resolves within limit inclusively`() {
+        val feedback = resolveTimerLimitFeedback(
+            startedSensorNanos = 1_000_000_000L,
+            stoppedSensorNanos = 7_000_000_000L,
+            timerLimitMs = 6_000,
+        )
+
+        assertEquals(TimerLimitFeedback.WITHIN_LIMIT, feedback)
+    }
+
+    @Test
+    fun `timer limit feedback resolves over limit when elapsed exceeds threshold`() {
+        val feedback = resolveTimerLimitFeedback(
+            startedSensorNanos = 1_000_000_000L,
+            stoppedSensorNanos = 7_010_000_000L,
+            timerLimitMs = 6_000,
+        )
+
+        assertEquals(TimerLimitFeedback.OVER_LIMIT, feedback)
+    }
+
+    @Test
+    fun `timer limit feedback plays only on tablet minimal monitoring host path`() {
+        assertTrue(
+            shouldPlayTimerLimitFeedbackForDevice(
+                tabletAlwaysHost = true,
+                stage = SessionStage.MONITORING,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                isHost = true,
+            ),
+        )
+        assertFalse(
+            shouldPlayTimerLimitFeedbackForDevice(
+                tabletAlwaysHost = false,
+                stage = SessionStage.MONITORING,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                isHost = true,
+            ),
+        )
+        assertFalse(
+            shouldPlayTimerLimitFeedbackForDevice(
+                tabletAlwaysHost = true,
+                stage = SessionStage.MONITORING,
+                operatingMode = SessionOperatingMode.NETWORK_RACE,
+                isHost = false,
+            ),
+        )
+    }
+
+    @Test
     fun `does not start capture again while start is pending`() {
         val action = resolveLocalCaptureAction(
             monitoringActive = true,

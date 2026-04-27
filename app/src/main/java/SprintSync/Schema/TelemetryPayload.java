@@ -16,8 +16,9 @@ public final class TelemetryPayload {
   public static final byte DeviceIdentity = 8;
   public static final byte DeviceTelemetry = 9;
   public static final byte LapResult = 10;
+  public static final byte HostControlCommand = 11;
 
-  public static final String[] names = { "NONE", "SessionTriggerRequest", "SessionTrigger", "SessionTimelineSnapshot", "SessionSnapshot", "TriggerRefinement", "DeviceConfigUpdate", "ClockResyncRequest", "DeviceIdentity", "DeviceTelemetry", "LapResult", };
+  public static final String[] names = { "NONE", "SessionTriggerRequest", "SessionTrigger", "SessionTimelineSnapshot", "SessionSnapshot", "TriggerRefinement", "DeviceConfigUpdate", "ClockResyncRequest", "DeviceIdentity", "DeviceTelemetry", "LapResult", "HostControlCommand", };
 
   public static String name(int e) { return names[e]; }
 }
